@@ -1,33 +1,94 @@
 package mx.unison.assistant.ui.frame;
 
 import java.awt.*;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import javax.swing.*;
 
 import mx.unison.assistant.ui.views.*;
 
 public class MainWindow {
 
+    JFrame frame;
+    Sidebar sidebar;
     CardLayout cards = new CardLayout();
     JPanel content = new JPanel(cards);
+    AlertasPanel alertasPanel;
+    JLayeredPane centerLayers = new JLayeredPane();
 
-    public void show() {
-        JFrame frame = new JFrame("Asistente Profesor-Investigador");
+    public MainWindow() {
+        frame = new JFrame("Asistente Profesor-Investigador");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-        content.add(new PlanAcademicoView(), Section.ACADEMIC_PLAN.name());
-        content.add(new EvidenciasView(), Section.EVIDENCE.name());
-        content.add(new AlertasView(), Section.ALERTS.name());
-        content.add(new ReportesView(), Section.REPORTS.name());
-        content.add(new TiposEvidenciaView(), Section.EVIDENCE_TYPES.name());
+        PlanAcademicoView planView = new PlanAcademicoView();
+        SeguimientoView seguimientoView = new SeguimientoView();
+        ReportesView reportesView = new ReportesView();
+        AjustesView ajustesView = new AjustesView();
 
-        Sidebar sidebar = new Sidebar(section -> cards.show(content, section.name()));
+        content.add(planView, Section.ACADEMIC_PLAN.name());
+        content.add(seguimientoView, Section.TRACKING.name());
+        content.add(reportesView, Section.REPORTS.name());
+        content.add(ajustesView, Section.SETTINGS.name());
+
+        sidebar = new Sidebar(section -> showSection(section), () -> toggleAlerts());
+        alertasPanel = new AlertasPanel(() -> toggleAlerts());
+        alertasPanel.setVisible(false);
+
+        planView.setOnDataChanged(() -> alertasPanel.refresh());
+        seguimientoView.setOnDataChanged(() -> alertasPanel.refresh());
+        ajustesView.setOnDataChanged(() -> alertasPanel.refresh());
+
+        // Usamos JLayeredPane para que la bandeja de alertas flote encima de la pantalla actual
+        centerLayers.add(content, JLayeredPane.DEFAULT_LAYER);
+        centerLayers.add(alertasPanel, JLayeredPane.PALETTE_LAYER);
+        centerLayers.addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                layoutCenterLayers();
+            }
+        });
 
         frame.add(sidebar, BorderLayout.WEST);
-        frame.add(content, BorderLayout.CENTER);
+        frame.add(centerLayers, BorderLayout.CENTER);
 
         frame.setSize(1280, 720);
         frame.setMinimumSize(new Dimension(1024, 640));
         frame.setLocationRelativeTo(null);
+    }
+
+    private void layoutCenterLayers() {
+        int width = centerLayers.getWidth();
+        int height = centerLayers.getHeight();
+        int alertsWidth = UIManager.getInt("Alertas.width");
+        content.setBounds(0, 0, width, height);
+        alertasPanel.setBounds(0, 0, alertsWidth, height);
+    }
+
+    public void show() {
         frame.setVisible(true);
+        layoutCenterLayers();
+    }
+
+    public void showSection(Section section) {
+        cards.show(content, section.name());
+        sidebar.selectSection(section);
+        if (alertasPanel.isVisible()) {
+            alertasPanel.setVisible(false);
+            sidebar.setAlertsSelected(false);
+        }
+    }
+
+    public void toggleAlerts() {
+        boolean nextVisible = !alertasPanel.isVisible();
+        if (nextVisible) {
+            alertasPanel.refresh();
+            layoutCenterLayers();
+        }
+        alertasPanel.setVisible(nextVisible);
+        sidebar.setAlertsSelected(nextVisible);
+    }
+
+    public JFrame getFrame() {
+        return frame;
     }
 }

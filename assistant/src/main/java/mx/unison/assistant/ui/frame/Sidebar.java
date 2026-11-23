@@ -1,17 +1,23 @@
 package mx.unison.assistant.ui.frame;
 
 import java.awt.*;
+import java.util.EnumMap;
+import java.util.Map;
 import java.util.function.Consumer;
 import javax.swing.*;
 
 public class Sidebar extends JPanel {
 
     Consumer<Section> onSelect;
+    Runnable onToggleAlerts;
     ButtonGroup buttonGroup = new ButtonGroup();
     JPanel tilesPanel = new JPanel();
+    Map<Section, JToggleButton> sectionTiles = new EnumMap<>(Section.class);
+    JToggleButton alertsTile;
 
-    public Sidebar(Consumer<Section> onSelect) {
+    public Sidebar(Consumer<Section> onSelect, Runnable onToggleAlerts) {
         this.onSelect = onSelect;
+        this.onToggleAlerts = onToggleAlerts;
 
         Insets padding = UIManager.getInsets("Sidebar.padding");
 
@@ -32,13 +38,20 @@ public class Sidebar extends JPanel {
         JLabel title = new JLabel("<html>Asistente<br>Profesor-Investigador</html>");
         title.putClientProperty("FlatLaf.style", "font: bold, size: 15");
 
+        JLabel welcome = new JLabel("Bienvenida, Dra. Pesantes");
+        welcome.setForeground(UIManager.getColor("Text.secondaryForeground"));
+        welcome.putClientProperty("FlatLaf.style", "font: size: 12");
+
         JLabel greeting = new JLabel("<html>Gestión de producción y evidencias</html>");
-        greeting.setForeground(UIManager.getColor("Text.secondaryForeground"));
+        greeting.setForeground(UIManager.getColor("Text.tertiaryForeground"));
+        greeting.putClientProperty("FlatLaf.style", "font: size: 12");
 
         header.add(title);
-        header.add(Box.createVerticalStrut(10));
+        header.add(Box.createVerticalStrut(14));
+        header.add(welcome);
+        header.add(Box.createVerticalStrut(4));
         header.add(greeting);
-        header.add(Box.createVerticalStrut(30));
+        header.add(Box.createVerticalStrut(28));
         return header;
     }
 
@@ -66,13 +79,33 @@ public class Sidebar extends JPanel {
 
         tile.setPreferredSize(UIManager.getDimension("Sidebar.tileSize"));
         tile.setHorizontalTextPosition(SwingConstants.CENTER);
-        tile.putClientProperty("FlatLaf.styleClass", "sidebarTile");
-        tile.addActionListener(e -> onSelect.accept(section));
         tile.setVerticalTextPosition(SwingConstants.BOTTOM);
+        tile.putClientProperty("FlatLaf.styleClass", "sidebarTile");
 
-        buttonGroup.add(tile);
+        if (section == Section.ALERTS) {
+            // Alertas se abre encima de cualquier pantalla, no cambia de vista
+            alertsTile = tile;
+            tile.addActionListener(e -> onToggleAlerts.run());
+        } else {
+            tile.addActionListener(e -> onSelect.accept(section));
+            buttonGroup.add(tile);
+            sectionTiles.put(section, tile);
+        }
+
         tilesPanel.add(tile);
         return tile;
     }
 
+    public void selectSection(Section section) {
+        JToggleButton tile = sectionTiles.get(section);
+        if (tile != null) {
+            tile.setSelected(true);
+        }
+    }
+
+    public void setAlertsSelected(boolean selected) {
+        if (alertsTile != null) {
+            alertsTile.setSelected(selected);
+        }
+    }
 }

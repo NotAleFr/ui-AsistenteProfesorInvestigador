@@ -2,10 +2,10 @@ package mx.unison.assistant.ui.frame;
 
 public enum Section {
     ACADEMIC_PLAN("Plan acad."),
-    EVIDENCE("Evidencias"),
-    ALERTS("Alertas"),
+    TRACKING("Seguimiento"),
     REPORTS("Reportes"),
-    EVIDENCE_TYPES("Tipos");
+    ALERTS("Alertas"),
+    SETTINGS("Ajustes");
 
     String label; // texto que se ve en el tile del menú
 
