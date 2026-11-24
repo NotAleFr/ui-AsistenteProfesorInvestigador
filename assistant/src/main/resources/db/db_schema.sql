@@ -50,6 +50,7 @@ CREATE TABLE Acreditacion (
 CREATE TABLE Evidencia (
     IdEvidencia       INTEGER PRIMARY KEY AUTOINCREMENT,
     Titulo            TEXT NOT NULL,
+    Descripcion       TEXT,
     Anio              INTEGER NOT NULL CHECK (Anio BETWEEN 1900 AND 2200),
     Periodo           TEXT NOT NULL,
     FechaInicio       TEXT,                -- ISO 8601: YYYY-MM-DD
@@ -94,7 +95,7 @@ CREATE TABLE Alertas (
 	IdAlerta INTEGER PRIMARY KEY AUTOINCREMENT,
 	ContenidoAlerta TEXT NOT NULL,
 	FechaHoraCreacion TEXT DEFAULT CURRENT_TIMESTAMP
-)
+);
 
 -- ---------- Índices sobre llaves foráneas ----------
 
