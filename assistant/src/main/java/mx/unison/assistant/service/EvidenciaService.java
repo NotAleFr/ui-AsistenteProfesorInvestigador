@@ -1,14 +1,15 @@
-package mx.unison.assistant.services;
+package mx.unison.assistant.service;
 
 import java.io.File;
 import java.io.IOException;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import mx.unison.assistant.data.EvidenciaDAO;
-import mx.unison.assistant.models.Documento;
-import mx.unison.assistant.models.Evidencia;
+import mx.unison.assistant.model.Documento;
+import mx.unison.assistant.model.Evidencia;
 
 /**
  * Servicio central de lógica de negocio para la gestión, búsqueda, filtrado y cálculo
@@ -103,11 +104,10 @@ public class EvidenciaService {
     public Evidencia registerEvidencia(Evidencia evidencia, List<File> filesToAttach)
             throws SQLException, IOException {
         validateEvidencia(evidencia);
+        validateFiles(filesToAttach);
 
-        // Extraer año automáticamente desde el periodo (YYYY-1 o YYYY-2) si no viene asignado
-        if (evidencia.getAnio() <= 0 && evidencia.getPeriodo() != null && evidencia.getPeriodo().length() >= 4) {
-            evidencia.setAnio(Integer.parseInt(evidencia.getPeriodo().substring(0, 4)));
-        }
+        // El año siempre sale del periodo (YYYY-1 o YYYY-2) para que nunca queden distintos
+        evidencia.setAnio(yearFromPeriod(evidencia.getPeriodo()));
 
         int newId = evidenciaDAO.insert(evidencia);
         evidencia.setIdEvidencia(newId);
@@ -115,11 +115,27 @@ public class EvidenciaService {
         // Recuperar nombres resueltos por JOIN (como NombreCategoria para la subcarpeta de archivos)
         Evidencia saved = evidenciaDAO.findById(newId).orElse(evidencia);
 
-        if (filesToAttach != null && !filesToAttach.isEmpty()) {
-            for (File file : filesToAttach) {
-                Documento doc = documentoService.attachDocument(
-                        file, newId, saved.getNombreCategoria());
-                saved.getDocumentos().add(doc);
+        if (filesToAttach != null) {
+            try {
+                for (File file : filesToAttach) {
+                    Documento doc = documentoService.attachDocument(
+                            file, newId, saved.getNombreCategoria());
+                    saved.getDocumentos().add(doc);
+                }
+            } catch (IOException | SQLException e) {
+                // Si un adjunto falla, se deshace el registro completo para no dejar evidencias a medias.
+                // Primero la BD (sus Documento se borran por ON DELETE CASCADE) y luego los archivos.
+                try {
+                    evidenciaDAO.delete(newId);
+                } catch (SQLException cleanup) {
+                    // El registro sigue en la BD: se conservan sus archivos para que no queden rotos
+                    e.addSuppressed(cleanup);
+                    throw e;
+                }
+                for (Documento doc : saved.getDocumentos()) {
+                    documentoService.deleteFile(doc);
+                }
+                throw e;
             }
         }
 
@@ -142,18 +158,30 @@ public class EvidenciaService {
             throw new IllegalArgumentException("La evidencia a editar no tiene un ID válido.");
         }
         validateEvidencia(evidencia);
+        validateFiles(newFiles);
 
-        if (evidencia.getAnio() <= 0 && evidencia.getPeriodo() != null && evidencia.getPeriodo().length() >= 4) {
-            evidencia.setAnio(Integer.parseInt(evidencia.getPeriodo().substring(0, 4)));
-        }
+        evidencia.setAnio(yearFromPeriod(evidencia.getPeriodo()));
 
         evidenciaDAO.update(evidencia);
 
         if (newFiles != null && !newFiles.isEmpty()) {
             Evidencia current = evidenciaDAO.findById(evidencia.getIdEvidencia()).orElse(evidencia);
-            for (File file : newFiles) {
-                documentoService.attachDocument(
-                        file, current.getIdEvidencia(), current.getNombreCategoria());
+            List<Documento> added = new ArrayList<>();
+            try {
+                for (File file : newFiles) {
+                    added.add(documentoService.attachDocument(
+                            file, current.getIdEvidencia(), current.getNombreCategoria()));
+                }
+            } catch (IOException | SQLException e) {
+                // Se quitan solo los adjuntos nuevos de esta edición; los cambios de datos ya se guardaron
+                for (Documento doc : added) {
+                    try {
+                        documentoService.removeDocument(doc);
+                    } catch (SQLException cleanup) {
+                        e.addSuppressed(cleanup);
+                    }
+                }
+                throw e;
             }
         }
 
@@ -283,6 +311,19 @@ public class EvidenciaService {
                 && ev.getFechaFinalizacion().compareTo(ev.getFechaInicio()) < 0) {
             throw new IllegalArgumentException("La fecha de finalización no puede ser anterior a la fecha de inicio.");
         }
+    }
+
+    private void validateFiles(List<File> files) throws IOException {
+        if (files == null) {
+            return;
+        }
+        for (File file : files) {
+            documentoService.validate(file);
+        }
+    }
+
+    private int yearFromPeriod(String periodo) {
+        return Integer.parseInt(periodo.substring(0, 4));
     }
 
     private boolean isFilterActive(String value) {

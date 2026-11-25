@@ -82,9 +82,17 @@ public class DatabaseConnection {
             }
 
             if (needsSchema) {
-                executeSqlScript(conn, "/db/db_schema.sql");
-                executeSqlScript(conn, "/db/db_data.sql");
-                seedDefaultPlanIfNeeded(conn);
+                // En una transacción: si algo falla, no queda una BD a medias que ya no se vuelva a crear
+                conn.setAutoCommit(false);
+                try {
+                    executeSqlScript(conn, "/db/db_schema.sql");
+                    executeSqlScript(conn, "/db/db_data.sql");
+                    seedDefaultPlanIfNeeded(conn);
+                    conn.commit();
+                } catch (SQLException e) {
+                    conn.rollback();
+                    throw e;
+                }
             }
         }
     }
@@ -92,56 +100,79 @@ public class DatabaseConnection {
     /**
      * Restaura únicamente las tablas normativas ({@code Categoria}, {@code TipoEvidencia},
      * {@code Opcion}, {@code Estatus}, {@code Acreditacion}) a sus valores de fábrica (RF-22).
+     * Si alguna evidencia quedara apuntando a un catálogo que ya no existe, no se cambia nada.
      *
-     * @throws SQLException si falla la restauración por restricciones de integridad o SQL.
+     * @throws SQLException si falla la restauración; en ese caso la BD queda como estaba.
      */
     public static synchronized void restoreDefaultCatalog() throws SQLException {
         try (Connection conn = getConnection()) {
-            try (Statement stmt = conn.createStatement()) {
-                stmt.execute("PRAGMA foreign_keys = OFF;");
-                stmt.execute("DELETE FROM Opcion;");
-                stmt.execute("DELETE FROM TipoEvidencia;");
-                stmt.execute("DELETE FROM Categoria;");
-                stmt.execute("DELETE FROM Estatus;");
-                stmt.execute("DELETE FROM Acreditacion;");
+            runWithoutForeignKeys(conn, () -> {
+                deleteAllRows(conn, "Opcion", "TipoEvidencia", "Categoria", "Estatus", "Acreditacion");
+                executeSqlScript(conn, "/db/db_data.sql");
+            });
+        }
+    }
+
+    /**
+     * Elimina toda la información registrada y deja la base de datos como recién instalada (RF-23).
+     * Los archivos adjuntos los borra {@code DocumentoService}, no esta clase.
+     *
+     * @throws SQLException si falla la limpieza; en ese caso la BD queda como estaba.
+     */
+    public static synchronized void resetFullDatabase() throws SQLException {
+        try (Connection conn = getConnection()) {
+            runWithoutForeignKeys(conn, () -> {
+                deleteAllRows(conn, "Alertas", "Documento", "Evidencia", "PlanAcademico",
+                        "Opcion", "TipoEvidencia", "Categoria", "Estatus", "Acreditacion");
+                executeSqlScript(conn, "/db/db_data.sql");
+                seedDefaultPlanIfNeeded(conn);
+            });
+        }
+    }
+
+    /** Pasos de SQL que se ejecutan dentro de {@link #runWithoutForeignKeys}. */
+    private interface SqlSteps {
+        void run() throws SQLException;
+    }
+
+    /**
+     * Ejecuta los pasos en una transacción con las llaves foráneas apagadas, revisa que
+     * no quede ninguna llave rota y solo entonces confirma. Si algo falla, deshace todo.
+     * (SQLite ignora {@code PRAGMA foreign_keys} dentro de una transacción, por eso se apaga antes.)
+     */
+    private static void runWithoutForeignKeys(Connection conn, SqlSteps steps) throws SQLException {
+        try (Statement stmt = conn.createStatement()) {
+            stmt.execute("PRAGMA foreign_keys = OFF;");
+        }
+        conn.setAutoCommit(false);
+        try {
+            steps.run();
+            try (Statement stmt = conn.createStatement();
+                 ResultSet broken = stmt.executeQuery("PRAGMA foreign_key_check;")) {
+                if (broken.next()) {
+                    throw new SQLException("La operación dejaría registros apuntando a datos que ya no existen "
+                            + "(tabla " + broken.getString("table") + "). No se hizo ningún cambio.");
+                }
             }
-            executeSqlScript(conn, "/db/db_data.sql");
+            conn.commit();
+        } catch (SQLException | RuntimeException e) {
+            // También RuntimeException: si no se deshace aquí, setAutoCommit(true) confirmaría el borrado
+            conn.rollback();
+            throw e;
+        } finally {
+            conn.setAutoCommit(true);
             try (Statement stmt = conn.createStatement()) {
                 stmt.execute("PRAGMA foreign_keys = ON;");
             }
         }
     }
 
-    /**
-     * Elimina toda la información registrada y reconstruye la base de datos limpia (RF-23).
-     *
-     * @throws SQLException si falla la reconstrucción del esquema.
-     */
-    public static synchronized void resetFullDatabase() throws SQLException {
-        File dbFile = new File(dbFilePath);
-        if (dbFile.exists() && !dbFile.delete()) {
-            // Si el archivo está bloqueado en Windows, limpiamos las tablas manualmente
-            try (Connection conn = getConnection(); Statement stmt = conn.createStatement()) {
-                stmt.execute("PRAGMA foreign_keys = OFF;");
-                stmt.execute("DELETE FROM Alertas;");
-                stmt.execute("DELETE FROM Documento;");
-                stmt.execute("DELETE FROM Evidencia;");
-                stmt.execute("DELETE FROM PlanAcademico;");
-                stmt.execute("DELETE FROM Opcion;");
-                stmt.execute("DELETE FROM TipoEvidencia;");
-                stmt.execute("DELETE FROM Categoria;");
-                stmt.execute("DELETE FROM Estatus;");
-                stmt.execute("DELETE FROM Acreditacion;");
-                stmt.execute("PRAGMA foreign_keys = ON;");
+    private static void deleteAllRows(Connection conn, String... tables) throws SQLException {
+        try (Statement stmt = conn.createStatement()) {
+            for (String table : tables) {
+                stmt.execute("DELETE FROM " + table + ";");
             }
-            try (Connection conn = getConnection()) {
-                executeSqlScript(conn, "/db/db_data.sql");
-                seedDefaultPlanIfNeeded(conn);
-            }
-            return;
         }
-        initialized = false;
-        getConnection().close();
     }
 
     /**

@@ -1,4 +1,4 @@
-package mx.unison.assistant.services;
+package mx.unison.assistant.service;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -7,9 +7,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import mx.unison.assistant.data.DatabaseConnection;
-import mx.unison.assistant.models.Documento;
-import mx.unison.assistant.models.Evidencia;
-import mx.unison.assistant.models.PlanAcademico;
+import mx.unison.assistant.model.Documento;
+import mx.unison.assistant.model.Evidencia;
+import mx.unison.assistant.model.PlanAcademico;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -37,11 +37,15 @@ class BackendServicesTest {
 
         DatabaseConnection.setDbFilePath(testDb.toString());
 
-        catalogoService = new CatalogoService();
-        planService = new PlanService();
         documentoService = new DocumentoService(
                 new mx.unison.assistant.data.DocumentoDAO(),
                 testAttachments.toString()
+        );
+        catalogoService = new CatalogoService(new mx.unison.assistant.data.CatalogoDAO(), documentoService);
+        planService = new PlanService(
+                new mx.unison.assistant.data.PlanAcademicoDAO(),
+                new mx.unison.assistant.data.EvidenciaDAO(),
+                documentoService
         );
         alertaService = new AlertaService();
         evidenciaService = new EvidenciaService(
@@ -139,5 +143,90 @@ class BackendServicesTest {
         assertThrows(Exception.class, () ->
                 evidenciaService.registerEvidencia(ev, List.of(exeFile.toFile()))
         );
+    }
+
+    @Test
+    void testEliminarPlanConEvidenciasYAdjuntos() throws Exception {
+        PlanAcademico plan = planService.createPlan("Plan a borrar", "2026-2");
+        Evidencia guardada = evidenciaService.registerEvidencia(
+                nuevaEvidencia(plan.getIdPlanAcademico()), List.of(crearPdf("acta.pdf")));
+        Path archivo = Path.of(guardada.getDocumentos().get(0).getRutaAlmacenamiento());
+        assertTrue(Files.exists(archivo));
+
+        planService.deletePlan(plan.getIdPlanAcademico()); // RF-09
+
+        assertTrue(planService.getEvidenciasByPlan(plan.getIdPlanAcademico()).isEmpty());
+        assertTrue(evidenciaService.findById(guardada.getIdEvidencia()).isEmpty());
+        assertFalse(Files.exists(archivo));
+    }
+
+    @Test
+    void testAdjuntoInvalidoNoDejaEvidenciaNiArchivos() throws Exception {
+        PlanAcademico plan = planService.createPlan("Plan adjuntos", "2026-2");
+        Path exe = tempDir.resolve("programa.exe");
+        Files.writeString(exe, "no permitido");
+
+        assertThrows(Exception.class, () -> evidenciaService.registerEvidencia(
+                nuevaEvidencia(plan.getIdPlanAcademico()), List.of(crearPdf("bueno.pdf"), exe.toFile())));
+
+        assertTrue(evidenciaService.findForTracking().isEmpty());
+        assertFalse(Files.exists(tempDir.resolve("archivos_adjuntos")));
+    }
+
+    @Test
+    void testCambiarPeriodoActualizaAnio() throws Exception {
+        PlanAcademico plan = planService.createPlan("Plan anio", "2026-2");
+        Evidencia guardada = evidenciaService.registerEvidencia(nuevaEvidencia(plan.getIdPlanAcademico()), List.of());
+        assertEquals(2026, guardada.getAnio());
+
+        guardada.setPeriodo("2027-1");
+        evidenciaService.updateEvidencia(guardada, List.of());
+
+        assertEquals(2027, evidenciaService.findById(guardada.getIdEvidencia()).get().getAnio());
+    }
+
+    @Test
+    void testRestaurarCatalogoConservaEvidencias() throws Exception {
+        PlanAcademico plan = planService.createPlan("Plan catalogo", "2026-2");
+        evidenciaService.registerEvidencia(nuevaEvidencia(plan.getIdPlanAcademico()), List.of());
+
+        catalogoService.restoreDefaultCatalog(); // RF-22
+
+        assertEquals(5, catalogoService.getCategories().length);
+        assertEquals(1, evidenciaService.findForTracking().size());
+    }
+
+    @Test
+    void testRestablecerTodoBorraDatosYArchivos() throws Exception {
+        PlanAcademico plan = planService.createPlan("Plan reset", "2026-2");
+        evidenciaService.registerEvidencia(nuevaEvidencia(plan.getIdPlanAcademico()), List.of(crearPdf("oficio.pdf")));
+        assertTrue(Files.exists(tempDir.resolve("archivos_adjuntos")));
+
+        catalogoService.resetAllSystemData(); // RF-23
+
+        assertTrue(evidenciaService.findForTracking().isEmpty());
+        assertFalse(Files.exists(tempDir.resolve("archivos_adjuntos")));
+        assertEquals(5, catalogoService.getCategories().length);
+    }
+
+    @Test
+    void testCategoriaOtrosTieneTipoEvidencia() throws Exception {
+        // RF-04: la categoría adicional "Otros" debe poder usarse
+        assertEquals(1, catalogoService.getTypes("Otras evidencias").length);
+    }
+
+    private Evidencia nuevaEvidencia(int idPlan) {
+        Evidencia ev = new Evidencia();
+        ev.setTitulo("Evidencia de prueba");
+        ev.setPeriodo("2026-2");
+        ev.setIdOpcion(1);
+        ev.setIdPlanAcademico(idPlan);
+        return ev;
+    }
+
+    private File crearPdf(String nombre) throws Exception {
+        Path pdf = tempDir.resolve(nombre);
+        Files.writeString(pdf, "contenido de prueba");
+        return pdf.toFile();
     }
 }

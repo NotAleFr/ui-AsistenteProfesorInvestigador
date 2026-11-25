@@ -8,7 +8,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import mx.unison.assistant.models.PlanAcademico;
+import mx.unison.assistant.model.PlanAcademico;
 
 /**
  * Objeto de Acceso a Datos (DAO) para la tabla {@code PlanAcademico}.
@@ -126,17 +126,29 @@ public class PlanAcademicoDAO {
     }
 
     /**
-     * Elimina un plan académico por su ID (siempre que no tenga evidencias restringidas).
+     * Elimina un plan académico y todas sus evidencias en una sola transacción (RF-09).
      *
      * @param idPlanAcademico identificador del plan a borrar.
-     * @throws SQLException si ocurre un error SQL o restricción de llave foránea.
+     * @throws SQLException si ocurre un error SQL; en ese caso no se borra nada.
      */
     public void delete(int idPlanAcademico) throws SQLException {
-        String sql = "DELETE FROM PlanAcademico WHERE IdPlanAcademico = ?";
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setInt(1, idPlanAcademico);
-            ps.executeUpdate();
+        // Evidencia.IdPlanAcademico es ON DELETE RESTRICT: primero se borran las evidencias
+        // (sus Documento se borran solos por ON DELETE CASCADE) y luego el plan, en una sola transacción.
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            conn.setAutoCommit(false);
+            try (PreparedStatement deleteEvidencias = conn.prepareStatement(
+                         "DELETE FROM Evidencia WHERE IdPlanAcademico = ?");
+                 PreparedStatement deletePlan = conn.prepareStatement(
+                         "DELETE FROM PlanAcademico WHERE IdPlanAcademico = ?")) {
+                deleteEvidencias.setInt(1, idPlanAcademico);
+                deleteEvidencias.executeUpdate();
+                deletePlan.setInt(1, idPlanAcademico);
+                deletePlan.executeUpdate();
+                conn.commit();
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            }
         }
     }
 

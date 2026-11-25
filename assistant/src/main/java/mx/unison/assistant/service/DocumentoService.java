@@ -1,4 +1,4 @@
-package mx.unison.assistant.services;
+package mx.unison.assistant.service;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -6,14 +6,14 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import mx.unison.assistant.data.DocumentoDAO;
-import mx.unison.assistant.models.Documento;
+import mx.unison.assistant.model.Documento;
 
 /**
  * Servicio encargado de gestionar los archivos probatorios adjuntos a evidencias (RF-03, IS-3.3):
@@ -52,38 +52,57 @@ public class DocumentoService {
      */
     public Documento attachDocument(File sourceFile, int idEvidencia, String categoryName)
             throws IOException, SQLException {
-        if (sourceFile == null || !sourceFile.exists() || !sourceFile.isFile()) {
-            throw new IOException("El archivo seleccionado no existe o no es válido.");
-        }
-
+        validate(sourceFile);
         String originalName = sourceFile.getName();
-        String extension = getExtension(originalName);
-        if (!ALLOWED_EXTENSIONS.contains(extension)) {
-            throw new IOException("Extensión no permitida (" + extension + "). "
-                    + "Formatos válidos: .pdf, .jpg, .jpeg, .png, .docx, .xlsx");
-        }
 
         String categoryFolder = mapCategoryToFolder(categoryName);
         Path targetDir = Paths.get(baseAttachmentsPath, categoryFolder);
         Files.createDirectories(targetDir);
 
-        // Prefijo temporal con timestamp para evitar colisiones de nombres duplicados
-        String storedFileName = System.currentTimeMillis() + "_" + originalName;
+        // Prefijo con timestamp + 8 caracteres aleatorios: dos archivos con el mismo nombre
+        // adjuntados en el mismo milisegundo no chocan.
+        // Sin REPLACE_EXISTING: si aun así el nombre existe, la copia falla en vez de pisar otro adjunto.
+        String storedFileName = System.currentTimeMillis() + "_"
+                + UUID.randomUUID().toString().substring(0, 8) + "_" + originalName;
         Path targetPath = targetDir.resolve(storedFileName);
-        Files.copy(sourceFile.toPath(), targetPath, StandardCopyOption.REPLACE_EXISTING);
-
-        String sha256 = computeSha256(targetPath.toFile());
-        long sizeBytes = Files.size(targetPath);
+        Files.copy(sourceFile.toPath(), targetPath);
 
         Documento doc = new Documento();
         doc.setRutaAlmacenamiento(targetPath.toString().replace("\\", "/"));
         doc.setNombreOriginal(originalName);
-        doc.setTamanoBytes(sizeBytes);
-        doc.setSha256(sha256);
         doc.setIdEvidencia(idEvidencia);
 
-        documentoDAO.insert(doc);
+        try {
+            doc.setSha256(computeSha256(targetPath.toFile()));
+            doc.setTamanoBytes(Files.size(targetPath));
+            documentoDAO.insert(doc);
+        } catch (IOException | SQLException e) {
+            // Si no se pudo registrar, se borra la copia para no dejar archivos huérfanos
+            try {
+                Files.deleteIfExists(targetPath);
+            } catch (IOException cleanup) {
+                e.addSuppressed(cleanup);
+            }
+            throw e;
+        }
         return doc;
+    }
+
+    /**
+     * Revisa que el archivo exista y que su extensión esté permitida (RF-15).
+     *
+     * @param sourceFile archivo seleccionado por el usuario.
+     * @throws IOException si el archivo no existe o su extensión no está permitida.
+     */
+    public void validate(File sourceFile) throws IOException {
+        if (sourceFile == null || !sourceFile.exists() || !sourceFile.isFile()) {
+            throw new IOException("El archivo seleccionado no existe o no es válido.");
+        }
+        String extension = getExtension(sourceFile.getName());
+        if (!ALLOWED_EXTENSIONS.contains(extension)) {
+            throw new IOException("Extensión no permitida (" + extension + "). "
+                    + "Formatos válidos: .pdf, .jpg, .jpeg, .png, .docx, .xlsx");
+        }
     }
 
     /**
@@ -108,13 +127,51 @@ public class DocumentoService {
             return;
         }
         documentoDAO.delete(doc.getIdDocumento());
-        if (doc.getRutaAlmacenamiento() != null) {
-            try {
-                Files.deleteIfExists(Paths.get(doc.getRutaAlmacenamiento()));
-            } catch (IOException ignored) {
-                // Si el archivo físico ya no existía, se mantiene consistente la BD
+        deleteFile(doc);
+    }
+
+    /**
+     * Borra solo el archivo físico de un documento, sin tocar la base de datos.
+     * Se usa cuando la BD ya borró el registro (por ejemplo, al eliminar un plan, RF-09).
+     *
+     * @param doc documento cuyo archivo se va a borrar.
+     */
+    public void deleteFile(Documento doc) {
+        if (doc == null || doc.getRutaAlmacenamiento() == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(Paths.get(doc.getRutaAlmacenamiento()));
+        } catch (IOException ignored) {
+            // El registro ya no existe en la BD; un archivo que no se pudo borrar solo queda huérfano
+        }
+    }
+
+    /**
+     * Borra la carpeta de adjuntos completa con todas sus subcarpetas (RF-23).
+     * Las subcarpetas se vuelven a crear al adjuntar el siguiente archivo.
+     *
+     * @throws IOException si algún archivo no se pudo borrar.
+     */
+    public void deleteAllFiles() throws IOException {
+        File folder = new File(baseAttachmentsPath);
+        if (folder.exists()) {
+            deleteFolder(folder);
+        }
+    }
+
+    private void deleteFolder(File folder) throws IOException {
+        File[] children = folder.listFiles();
+        if (children != null) {
+            for (File child : children) {
+                if (child.isDirectory()) {
+                    deleteFolder(child);
+                } else {
+                    Files.delete(child.toPath());
+                }
             }
         }
+        Files.delete(folder.toPath());
     }
 
     /**

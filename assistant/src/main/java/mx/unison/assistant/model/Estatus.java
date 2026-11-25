@@ -1,4 +1,4 @@
-package mx.unison.assistant.models;
+package mx.unison.assistant.model;
 
 /**
  * Catálogo de estados de cumplimiento de una evidencia institucional (tabla {@code Estatus}).

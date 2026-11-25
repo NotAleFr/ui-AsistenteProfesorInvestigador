@@ -8,11 +8,11 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import mx.unison.assistant.models.Acreditacion;
-import mx.unison.assistant.models.Categoria;
-import mx.unison.assistant.models.Estatus;
-import mx.unison.assistant.models.Opcion;
-import mx.unison.assistant.models.TipoEvidencia;
+import mx.unison.assistant.model.Acreditacion;
+import mx.unison.assistant.model.Categoria;
+import mx.unison.assistant.model.Estatus;
+import mx.unison.assistant.model.Opcion;
+import mx.unison.assistant.model.TipoEvidencia;
 
 /**
  * Objeto de Acceso a Datos (DAO) para los catálogos normativos del Reglamento PEDPD:

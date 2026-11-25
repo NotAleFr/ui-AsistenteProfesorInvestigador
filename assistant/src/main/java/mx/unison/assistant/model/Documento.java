@@ -1,4 +1,4 @@
-package mx.unison.assistant.models;
+package mx.unison.assistant.model;
 
 /**
  * Representa un archivo probatorio adjunto a una {@link Evidencia} (tabla {@code Documento}, RF-03).

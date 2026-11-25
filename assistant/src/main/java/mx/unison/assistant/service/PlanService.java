@@ -1,4 +1,4 @@
-package mx.unison.assistant.services;
+package mx.unison.assistant.service;
 
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -6,8 +6,9 @@ import java.util.List;
 import java.util.Optional;
 import mx.unison.assistant.data.EvidenciaDAO;
 import mx.unison.assistant.data.PlanAcademicoDAO;
-import mx.unison.assistant.models.Evidencia;
-import mx.unison.assistant.models.PlanAcademico;
+import mx.unison.assistant.model.Documento;
+import mx.unison.assistant.model.Evidencia;
+import mx.unison.assistant.model.PlanAcademico;
 
 /**
  * Servicio de lógica de negocio para la gestión de Planes Académicos de Trabajo (RF-06, RF-07).
@@ -17,15 +18,16 @@ public class PlanService {
 
     private final PlanAcademicoDAO planDAO;
     private final EvidenciaDAO evidenciaDAO;
+    private final DocumentoService documentoService;
 
     public PlanService() {
-        this.planDAO = new PlanAcademicoDAO();
-        this.evidenciaDAO = new EvidenciaDAO();
+        this(new PlanAcademicoDAO(), new EvidenciaDAO(), new DocumentoService());
     }
 
-    public PlanService(PlanAcademicoDAO planDAO, EvidenciaDAO evidenciaDAO) {
+    public PlanService(PlanAcademicoDAO planDAO, EvidenciaDAO evidenciaDAO, DocumentoService documentoService) {
         this.planDAO = planDAO;
         this.evidenciaDAO = evidenciaDAO;
+        this.documentoService = documentoService;
     }
 
     /**
@@ -114,12 +116,23 @@ public class PlanService {
     }
 
     /**
-     * Elimina un plan académico existente.
+     * Elimina un plan académico junto con todas sus evidencias y sus archivos adjuntos (RF-09).
      *
      * @param idPlanAcademico identificador del plan a borrar.
      * @throws SQLException si ocurre un error SQL.
      */
     public void deletePlan(int idPlanAcademico) throws SQLException {
+        // Se guardan los documentos antes de borrar, porque después ya no están en la BD
+        List<Documento> documentos = new ArrayList<>();
+        for (Evidencia ev : evidenciaDAO.findByPlan(idPlanAcademico)) {
+            documentos.addAll(ev.getDocumentos());
+        }
+
         planDAO.delete(idPlanAcademico);
+
+        // Los archivos se borran al final: si la BD falla, no se pierde ningún archivo
+        for (Documento doc : documentos) {
+            documentoService.deleteFile(doc);
+        }
     }
 }

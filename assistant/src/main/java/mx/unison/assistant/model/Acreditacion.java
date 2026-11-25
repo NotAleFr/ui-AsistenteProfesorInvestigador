@@ -1,4 +1,4 @@
-package mx.unison.assistant.models;
+package mx.unison.assistant.model;
 
 /**
  * Catálogo de estados de acreditación institucional de una evidencia (tabla {@code Acreditacion}).

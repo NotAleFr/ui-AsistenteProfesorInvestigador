@@ -1,15 +1,16 @@
-package mx.unison.assistant.services;
+package mx.unison.assistant.service;
 
+import java.io.IOException;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 import mx.unison.assistant.data.CatalogoDAO;
 import mx.unison.assistant.data.DatabaseConnection;
-import mx.unison.assistant.models.Acreditacion;
-import mx.unison.assistant.models.Categoria;
-import mx.unison.assistant.models.Estatus;
-import mx.unison.assistant.models.Opcion;
-import mx.unison.assistant.models.TipoEvidencia;
+import mx.unison.assistant.model.Acreditacion;
+import mx.unison.assistant.model.Categoria;
+import mx.unison.assistant.model.Estatus;
+import mx.unison.assistant.model.Opcion;
+import mx.unison.assistant.model.TipoEvidencia;
 
 /**
  * Servicio de lógica de negocio para la consulta y administración de los catálogos
@@ -19,13 +20,15 @@ import mx.unison.assistant.models.TipoEvidencia;
 public class CatalogoService {
 
     private final CatalogoDAO catalogoDAO;
+    private final DocumentoService documentoService;
 
     public CatalogoService() {
-        this.catalogoDAO = new CatalogoDAO();
+        this(new CatalogoDAO(), new DocumentoService());
     }
 
-    public CatalogoService(CatalogoDAO catalogoDAO) {
+    public CatalogoService(CatalogoDAO catalogoDAO, DocumentoService documentoService) {
         this.catalogoDAO = catalogoDAO;
+        this.documentoService = documentoService;
     }
 
     /**
@@ -238,11 +241,14 @@ public class CatalogoService {
     }
 
     /**
-     * Elimina toda la información del sistema y restablece los catálogos de fábrica (RF-23).
+     * Elimina toda la información del sistema, borra los archivos adjuntos
+     * y restablece los catálogos de fábrica (RF-23).
      *
-     * @throws SQLException si ocurre un error al limpiar la base de datos.
+     * @throws SQLException si ocurre un error al limpiar la base de datos (no se borra ningún archivo).
+     * @throws IOException  si la BD se limpió pero algún archivo adjunto no se pudo borrar.
      */
-    public void resetAllSystemData() throws SQLException {
+    public void resetAllSystemData() throws SQLException, IOException {
         DatabaseConnection.resetFullDatabase();
+        documentoService.deleteAllFiles();
     }
 }

@@ -1,4 +1,4 @@
-package mx.unison.assistant.models;
+package mx.unison.assistant.model;
 
 /**
  * Representa un Plan de Trabajo académico creado por el profesor-investigador

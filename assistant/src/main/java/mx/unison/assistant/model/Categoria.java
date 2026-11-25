@@ -1,4 +1,4 @@
-package mx.unison.assistant.models;
+package mx.unison.assistant.model;
 
 /**
  * Representa una categoría normativa del Reglamento PEDPD (Anexo 1) y la categoría "Otros" (RF-01).

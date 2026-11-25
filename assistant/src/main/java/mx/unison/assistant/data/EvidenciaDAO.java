@@ -8,7 +8,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import mx.unison.assistant.models.Evidencia;
+import mx.unison.assistant.model.Evidencia;
 
 /**
  * Objeto de Acceso a Datos (DAO) para la tabla {@code Evidencia} (RF-01, RF-04, RF-05, RF-06, RF-08).

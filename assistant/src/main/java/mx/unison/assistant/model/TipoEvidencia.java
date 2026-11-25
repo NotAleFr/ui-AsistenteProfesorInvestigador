@@ -1,4 +1,4 @@
-package mx.unison.assistant.models;
+package mx.unison.assistant.model;
 
 /**
  * Representa un tipo de actividad académica definida en el catálogo del Reglamento PEDPD.

@@ -1,4 +1,4 @@
-package mx.unison.assistant.models;
+package mx.unison.assistant.model;
 
 /**
  * Representa un aviso o recordatorio generado por el motor de reglas (RF-17, RF-18)

@@ -7,7 +7,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
-import mx.unison.assistant.models.Documento;
+import mx.unison.assistant.model.Documento;
 
 /**
  * Objeto de Acceso a Datos (DAO) para la tabla {@code Documento} (RF-03, RF-04, RF-05).

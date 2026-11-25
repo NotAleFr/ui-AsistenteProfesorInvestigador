@@ -1,4 +1,4 @@
-package mx.unison.assistant.models;
+package mx.unison.assistant.model;
 
 /**
  * Representa un criterio de evaluación u opción de participación dentro de un {@link TipoEvidencia},

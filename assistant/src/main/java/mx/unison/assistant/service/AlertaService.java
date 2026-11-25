@@ -1,4 +1,4 @@
-package mx.unison.assistant.services;
+package mx.unison.assistant.service;
 
 import java.sql.SQLException;
 import java.time.LocalDate;
@@ -6,9 +6,9 @@ import java.util.ArrayList;
 import java.util.List;
 import mx.unison.assistant.data.AlertaDAO;
 import mx.unison.assistant.data.EvidenciaDAO;
-import mx.unison.assistant.models.Alerta;
-import mx.unison.assistant.models.Documento;
-import mx.unison.assistant.models.Evidencia;
+import mx.unison.assistant.model.Alerta;
+import mx.unison.assistant.model.Documento;
+import mx.unison.assistant.model.Evidencia;
 
 /**
  * Servicio de evaluación de reglas de negocio para la Bandeja de Notificaciones

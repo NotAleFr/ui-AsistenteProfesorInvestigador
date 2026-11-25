@@ -7,7 +7,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
-import mx.unison.assistant.models.Alerta;
+import mx.unison.assistant.model.Alerta;
 
 /**
  * Objeto de Acceso a Datos (DAO) para la tabla {@code Alertas} (RF-17, RF-18).
