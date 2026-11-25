@@ -1,7 +1,7 @@
 package mx.unison.assistant.model;
 
 /**
- * Representa un archivo probatorio adjunto a una {@link Evidencia} (tabla {@code Documento}, RF-03).
+ * Representa un archivo probatorio adjunto a una {@link Evidencia} (tabla {@code Documento}, RF-15).
  * Almacena la ruta física relativa, metadatos del archivo y su huella de integridad SHA-256.
  */
 public class Documento {

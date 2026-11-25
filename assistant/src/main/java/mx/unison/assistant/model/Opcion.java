@@ -69,4 +69,19 @@ public class Opcion {
     public String toString() {
         return getFormattedLabel();
     }
+
+    // Compara por id para que JComboBox.setSelectedItem() encuentre el valor guardado
+    @Override
+    public boolean equals(Object other) {
+        if (!(other instanceof Opcion)) {
+            return false;
+        }
+        Opcion that = (Opcion) other;
+        return idOpcion == that.idOpcion;
+    }
+
+    @Override
+    public int hashCode() {
+        return idOpcion;
+    }
 }

@@ -5,13 +5,14 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import mx.unison.assistant.model.Evidencia;
 
 /**
- * Objeto de Acceso a Datos (DAO) para la tabla {@code Evidencia} (RF-01, RF-04, RF-05, RF-06, RF-08).
+ * Objeto de Acceso a Datos (DAO) para la tabla {@code Evidencia} (RF-02, RF-04, RF-05, RF-06, RF-10, RF-18).
  * Resuelve mediante JOIN los catálogos asociados ({@code Categoria}, {@code TipoEvidencia},
  * {@code Opcion}, {@code Estatus} y {@code Acreditacion}) y adjunta sus documentos.
  */
@@ -20,15 +21,15 @@ public class EvidenciaDAO {
     private static final String BASE_SELECT =
             "SELECT e.IdEvidencia, e.Titulo, e.Descripcion, e.Anio, e.Periodo, "
           + "e.FechaInicio, e.FechaFinalizacion, e.FechaModificacion, "
-          + "e.IdOpcion, e.IdEstatus, e.IdAcreditacion, e.IdPlanAcademico, "
-          + "c.NombreCategoria, c.ClaveCategoria, "
+          + "e.IdTipoEvidencia, e.IdOpcion, e.IdEstatus, e.IdAcreditacion, e.IdPlanAcademico, "
+          + "c.IdCategoria, c.NombreCategoria, c.ClaveCategoria, "
           + "t.NombreTipoEvidencia, "
           + "o.NombreOpcion, o.PuntajeOpcion, "
           + "est.NombreEstatus, "
           + "acr.NombreAcreditacion "
           + "FROM Evidencia e "
-          + "INNER JOIN Opcion o ON e.IdOpcion = o.IdOpcion "
-          + "INNER JOIN TipoEvidencia t ON o.IdTipoEvidencia = t.IdTipoEvidencia "
+          + "INNER JOIN TipoEvidencia t ON e.IdTipoEvidencia = t.IdTipoEvidencia "
+          + "LEFT JOIN Opcion o ON e.IdOpcion = o.IdOpcion "
           + "INNER JOIN Categoria c ON t.IdCategoria = c.IdCategoria "
           + "INNER JOIN Estatus est ON e.IdEstatus = est.IdEstatus "
           + "INNER JOIN Acreditacion acr ON e.IdAcreditacion = acr.IdAcreditacion ";
@@ -56,8 +57,25 @@ public class EvidenciaDAO {
         return list;
     }
 
+    public List<Evidencia> findActive() throws SQLException {
+        String sql = BASE_SELECT
+                + "INNER JOIN PlanAcademico p ON e.IdPlanAcademico = p.IdPlanAcademico "
+                + "WHERE p.Activo = 1 ORDER BY e.Anio DESC, e.Periodo DESC, e.IdEvidencia DESC";
+        List<Evidencia> list = new ArrayList<>();
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                Evidencia ev = mapRow(rs);
+                ev.setDocumentos(documentoDAO.findByEvidencia(ev.getIdEvidencia()));
+                list.add(ev);
+            }
+        }
+        return list;
+    }
+
     /**
-     * Obtiene todas las evidencias pertenecientes a un plan académico específico (RF-06).
+     * Obtiene todas las evidencias pertenecientes a un plan académico específico (RF-02).
      *
      * @param idPlanAcademico identificador del plan académico.
      * @return lista de evidencias del plan ordenadas por categoría.
@@ -105,7 +123,7 @@ public class EvidenciaDAO {
     }
 
     /**
-     * Obtiene las evidencias de un año calendario determinado (ambos semestres, RF-16).
+     * Obtiene las evidencias de un año calendario determinado (ambos semestres, RF-18).
      *
      * @param anio año académico (ej. 2026).
      * @return lista de evidencias del año indicado.
@@ -152,7 +170,7 @@ public class EvidenciaDAO {
     }
 
     /**
-     * Inserta un nuevo registro de evidencia institucional en SQLite (RF-01).
+     * Inserta un nuevo registro de evidencia institucional en SQLite (RF-04).
      *
      * @param ev objeto {@link Evidencia} a persistir.
      * @return identificador autogenerado de la evidencia.
@@ -160,8 +178,8 @@ public class EvidenciaDAO {
      */
     public int insert(Evidencia ev) throws SQLException {
         String sql = "INSERT INTO Evidencia (Titulo, Descripcion, Anio, Periodo, FechaInicio, "
-                   + "FechaFinalizacion, IdOpcion, IdEstatus, IdAcreditacion, IdPlanAcademico) "
-                   + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                   + "FechaFinalizacion, IdTipoEvidencia, IdOpcion, IdEstatus, IdAcreditacion, IdPlanAcademico) "
+                   + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, ev.getTitulo());
@@ -170,10 +188,11 @@ public class EvidenciaDAO {
             ps.setString(4, ev.getPeriodo());
             ps.setString(5, ev.getFechaInicio());
             ps.setString(6, ev.getFechaFinalizacion());
-            ps.setInt(7, ev.getIdOpcion());
-            ps.setInt(8, ev.getIdEstatus() > 0 ? ev.getIdEstatus() : 1);
-            ps.setInt(9, ev.getIdAcreditacion() > 0 ? ev.getIdAcreditacion() : 1);
-            ps.setInt(10, ev.getIdPlanAcademico() > 0 ? ev.getIdPlanAcademico() : 1);
+            ps.setInt(7, ev.getIdTipoEvidencia());
+            setOpcion(ps, 8, ev.getIdOpcion());
+            ps.setInt(9, ev.getIdEstatus() > 0 ? ev.getIdEstatus() : 1);
+            ps.setInt(10, ev.getIdAcreditacion() > 0 ? ev.getIdAcreditacion() : 1);
+            ps.setInt(11, ev.getIdPlanAcademico());
             ps.executeUpdate();
             try (ResultSet keys = ps.getGeneratedKeys()) {
                 if (keys.next()) {
@@ -186,17 +205,33 @@ public class EvidenciaDAO {
         return -1;
     }
 
+    public void updatePlanFields(Evidencia ev) throws SQLException {
+        String sql = "UPDATE Evidencia SET Titulo = ?, Descripcion = ?, Anio = ?, Periodo = ?, "
+                   + "IdTipoEvidencia = ?, IdOpcion = ? WHERE IdEvidencia = ?";
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, ev.getTitulo());
+            ps.setString(2, ev.getDescripcion());
+            ps.setInt(3, ev.getAnio());
+            ps.setString(4, ev.getPeriodo());
+            ps.setInt(5, ev.getIdTipoEvidencia());
+            setOpcion(ps, 6, ev.getIdOpcion());
+            ps.setInt(7, ev.getIdEvidencia());
+            ps.executeUpdate();
+        }
+    }
+
     /**
-     * Actualiza una evidencia existente (RF-04). El trigger de SQLite actualiza
-     * automáticamente {@code FechaModificacion}.
+     * Guarda el seguimiento de una evidencia (Tabla 3). No cambia el plan al que pertenece.
+     * El trigger de SQLite actualiza automáticamente {@code FechaModificacion}.
      *
      * @param ev evidencia con los cambios aplicados.
      * @throws SQLException si ocurre un error SQL.
      */
     public void update(Evidencia ev) throws SQLException {
         String sql = "UPDATE Evidencia SET Titulo = ?, Descripcion = ?, Anio = ?, Periodo = ?, "
-                   + "FechaInicio = ?, FechaFinalizacion = ?, IdOpcion = ?, IdEstatus = ?, "
-                   + "IdAcreditacion = ?, IdPlanAcademico = ? WHERE IdEvidencia = ?";
+                   + "FechaInicio = ?, FechaFinalizacion = ?, IdTipoEvidencia = ?, IdOpcion = ?, IdEstatus = ?, "
+                   + "IdAcreditacion = ? WHERE IdEvidencia = ?";
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, ev.getTitulo());
@@ -205,10 +240,10 @@ public class EvidenciaDAO {
             ps.setString(4, ev.getPeriodo());
             ps.setString(5, ev.getFechaInicio());
             ps.setString(6, ev.getFechaFinalizacion());
-            ps.setInt(7, ev.getIdOpcion());
-            ps.setInt(8, ev.getIdEstatus());
-            ps.setInt(9, ev.getIdAcreditacion());
-            ps.setInt(10, ev.getIdPlanAcademico());
+            ps.setInt(7, ev.getIdTipoEvidencia());
+            setOpcion(ps, 8, ev.getIdOpcion());
+            ps.setInt(9, ev.getIdEstatus());
+            ps.setInt(10, ev.getIdAcreditacion());
             ps.setInt(11, ev.getIdEvidencia());
             ps.executeUpdate();
         }
@@ -216,7 +251,7 @@ public class EvidenciaDAO {
 
     /**
      * Elimina una evidencia de la base de datos. Por {@code ON DELETE CASCADE},
-     * SQLite elimina automáticamente sus filas vinculadas en {@code Documento} (RF-05).
+     * SQLite elimina automáticamente sus filas vinculadas en {@code Documento} (RF-06).
      *
      * @param idEvidencia identificador de la evidencia a borrar.
      * @throws SQLException si ocurre un error SQL.
@@ -230,6 +265,15 @@ public class EvidenciaDAO {
         }
     }
 
+    // Sin opción elegida (id 0) se guarda NULL
+    private void setOpcion(PreparedStatement ps, int index, int idOpcion) throws SQLException {
+        if (idOpcion > 0) {
+            ps.setInt(index, idOpcion);
+        } else {
+            ps.setNull(index, Types.INTEGER);
+        }
+    }
+
     private Evidencia mapRow(ResultSet rs) throws SQLException {
         Evidencia ev = new Evidencia();
         ev.setIdEvidencia(rs.getInt("IdEvidencia"));
@@ -240,10 +284,12 @@ public class EvidenciaDAO {
         ev.setFechaInicio(rs.getString("FechaInicio"));
         ev.setFechaFinalizacion(rs.getString("FechaFinalizacion"));
         ev.setFechaModificacion(rs.getString("FechaModificacion"));
-        ev.setIdOpcion(rs.getInt("IdOpcion"));
+        ev.setIdTipoEvidencia(rs.getInt("IdTipoEvidencia"));
+        ev.setIdOpcion(rs.getInt("IdOpcion")); // NULL se lee como 0
         ev.setIdEstatus(rs.getInt("IdEstatus"));
         ev.setIdAcreditacion(rs.getInt("IdAcreditacion"));
         ev.setIdPlanAcademico(rs.getInt("IdPlanAcademico"));
+        ev.setIdCategoria(rs.getInt("IdCategoria"));
         ev.setNombreCategoria(rs.getString("NombreCategoria"));
         ev.setClaveCategoria(rs.getString("ClaveCategoria"));
         ev.setNombreTipoEvidencia(rs.getString("NombreTipoEvidencia"));

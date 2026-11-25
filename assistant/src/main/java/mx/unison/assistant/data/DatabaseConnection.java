@@ -2,8 +2,10 @@ package mx.unison.assistant.data;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -20,6 +22,8 @@ import java.util.stream.Collectors;
 public class DatabaseConnection {
 
     private static final String DEFAULT_DB_PATH = "base_datos.db";
+    // mvn exec:java pone esta propiedad (ver pom.xml) para que la BD nueva traiga db_demo.sql
+    public static final String DEMO_PROPERTY = "asistente.demo";
     private static String dbFilePath = DEFAULT_DB_PATH;
     private static boolean initialized = false;
 
@@ -60,12 +64,15 @@ public class DatabaseConnection {
         Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbFilePath);
         try (Statement stmt = conn.createStatement()) {
             stmt.execute("PRAGMA foreign_keys = ON;");
+        } catch (SQLException e) {
+            conn.close();
+            throw e;
         }
         return conn;
     }
 
     /**
-     * Verifica si la tabla {@code Categoria} existe y tiene registros; de lo contrario,
+     * Verifica si la tabla {@code Categoria} existe; de lo contrario,
      * ejecuta {@code db/db_schema.sql} y {@code db/db_data.sql} desde los recursos del proyecto.
      */
     private static void initializeDatabaseIfNeeded() throws SQLException {
@@ -82,12 +89,18 @@ public class DatabaseConnection {
             }
 
             if (needsSchema) {
+                // Antes de la transacción, porque SQLite ignora este PRAGMA dentro de una
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("PRAGMA foreign_keys = ON;");
+                }
                 // En una transacción: si algo falla, no queda una BD a medias que ya no se vuelva a crear
                 conn.setAutoCommit(false);
                 try {
                     executeSqlScript(conn, "/db/db_schema.sql");
                     executeSqlScript(conn, "/db/db_data.sql");
-                    seedDefaultPlanIfNeeded(conn);
+                    if ("true".equals(System.getProperty(DEMO_PROPERTY))) {
+                        executeSqlScript(conn, "/db/db_demo.sql");
+                    }
                     conn.commit();
                 } catch (SQLException e) {
                     conn.rollback();
@@ -125,7 +138,6 @@ public class DatabaseConnection {
                 deleteAllRows(conn, "Alertas", "Documento", "Evidencia", "PlanAcademico",
                         "Opcion", "TipoEvidencia", "Categoria", "Estatus", "Acreditacion");
                 executeSqlScript(conn, "/db/db_data.sql");
-                seedDefaultPlanIfNeeded(conn);
             });
         }
     }
@@ -176,21 +188,6 @@ public class DatabaseConnection {
     }
 
     /**
-     * Crea un plan académico base por defecto si no existe ninguno, garantizando que
-     * cualquier evidencia directa tenga una llave foránea válida en {@code PlanAcademico}.
-     */
-    private static void seedDefaultPlanIfNeeded(Connection conn) throws SQLException {
-        try (Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM PlanAcademico")) {
-            if (rs.next() && rs.getInt(1) == 0) {
-                int currentYear = java.time.Year.now().getValue();
-                stmt.executeUpdate("INSERT INTO PlanAcademico (IdPlanAcademico, NombrePlan, AnioPlan, PeriodoPlan) "
-                        + "VALUES (1, 'Plan General " + currentYear + "-1', " + currentYear + ", '" + currentYear + "-1')");
-            }
-        }
-    }
-
-    /**
      * Lee y ejecuta un archivo {@code .sql} ubicado en el classpath (por ejemplo {@code /db/db_schema.sql}).
      * Soporta bloques {@code BEGIN ... END;} de triggers sin partirlos prematuramente por punto y coma.
      */
@@ -205,7 +202,7 @@ public class DatabaseConnection {
             rawSql = reader.lines()
                     .filter(line -> !line.trim().startsWith("--"))
                     .collect(Collectors.joining("\n"));
-        } catch (Exception e) {
+        } catch (IOException | UncheckedIOException e) {
             throw new SQLException("Error leyendo script SQL: " + resourcePath, e);
         }
 

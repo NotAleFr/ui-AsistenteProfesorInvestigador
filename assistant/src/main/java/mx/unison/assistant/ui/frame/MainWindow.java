@@ -5,6 +5,7 @@ import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import javax.swing.*;
 
+import mx.unison.assistant.service.AppServices;
 import mx.unison.assistant.ui.views.*;
 
 public class MainWindow {
@@ -15,8 +16,10 @@ public class MainWindow {
     JPanel content = new JPanel(cards);
     AlertasPanel alertasPanel;
     JLayeredPane centerLayers = new JLayeredPane();
+    final AppServices services;
 
-    public MainWindow() {
+    public MainWindow(AppServices services) {
+        this.services = services;
         frame = new JFrame("Asistente Profesor-Investigador");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 

@@ -7,6 +7,7 @@ import com.formdev.flatlaf.FlatLightLaf;
 
 import com.formdev.flatlaf.fonts.inter.FlatInterFont;
 
+import mx.unison.assistant.service.AppServices;
 import mx.unison.assistant.ui.frame.MainWindow;
 
 public class Main {
@@ -23,7 +24,7 @@ public class Main {
         FlatLightLaf.setup();
 
         SwingUtilities.invokeLater(() -> {
-            new MainWindow().show();
+            new MainWindow(new AppServices()).show();
         });
     }
 }

@@ -2,7 +2,7 @@ package mx.unison.assistant.model;
 
 /**
  * Catálogo de estados de cumplimiento de una evidencia institucional (tabla {@code Estatus}).
- * Valores esperados según RF-01: "Pendiente", "En proceso" y "Entregado".
+ * Valores esperados según la Tabla 3: "Pendiente", "En proceso" y "Entregado".
  */
 public class Estatus {
 
@@ -36,5 +36,20 @@ public class Estatus {
     @Override
     public String toString() {
         return nombreEstatus;
+    }
+
+    // Compara por id para que JComboBox.setSelectedItem() encuentre el valor guardado
+    @Override
+    public boolean equals(Object other) {
+        if (!(other instanceof Estatus)) {
+            return false;
+        }
+        Estatus that = (Estatus) other;
+        return idEstatus == that.idEstatus;
+    }
+
+    @Override
+    public int hashCode() {
+        return idEstatus;
     }
 }

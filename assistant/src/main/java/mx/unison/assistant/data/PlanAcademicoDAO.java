@@ -12,7 +12,7 @@ import mx.unison.assistant.model.PlanAcademico;
 
 /**
  * Objeto de Acceso a Datos (DAO) para la tabla {@code PlanAcademico}.
- * Permite listar, crear, actualizar y eliminar planes de trabajo semestrales (RF-06).
+ * Permite listar, crear, actualizar y eliminar planes de trabajo semestrales (RF-01, RF-02, RF-09).
  */
 public class PlanAcademicoDAO {
 
@@ -23,7 +23,7 @@ public class PlanAcademicoDAO {
      * @throws SQLException si ocurre un error SQL.
      */
     public List<PlanAcademico> findAll() throws SQLException {
-        String sql = "SELECT IdPlanAcademico, NombrePlan, AnioPlan, PeriodoPlan "
+        String sql = "SELECT IdPlanAcademico, NombrePlan, AnioPlan, PeriodoPlan, Activo "
                    + "FROM PlanAcademico ORDER BY AnioPlan DESC, PeriodoPlan DESC, IdPlanAcademico ASC";
         List<PlanAcademico> list = new ArrayList<>();
         try (Connection conn = DatabaseConnection.getConnection();
@@ -44,33 +44,11 @@ public class PlanAcademicoDAO {
      * @throws SQLException si ocurre un error SQL.
      */
     public Optional<PlanAcademico> findById(int idPlanAcademico) throws SQLException {
-        String sql = "SELECT IdPlanAcademico, NombrePlan, AnioPlan, PeriodoPlan "
+        String sql = "SELECT IdPlanAcademico, NombrePlan, AnioPlan, PeriodoPlan, Activo "
                    + "FROM PlanAcademico WHERE IdPlanAcademico = ?";
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, idPlanAcademico);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    return Optional.of(mapRow(rs));
-                }
-            }
-        }
-        return Optional.empty();
-    }
-
-    /**
-     * Busca un plan académico por su nombre exacto.
-     *
-     * @param nombrePlan nombre del plan.
-     * @return {@link Optional} con el plan encontrado.
-     * @throws SQLException si ocurre un error SQL.
-     */
-    public Optional<PlanAcademico> findByNombre(String nombrePlan) throws SQLException {
-        String sql = "SELECT IdPlanAcademico, NombrePlan, AnioPlan, PeriodoPlan "
-                   + "FROM PlanAcademico WHERE NombrePlan = ?";
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, nombrePlan);
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
                     return Optional.of(mapRow(rs));
@@ -125,6 +103,16 @@ public class PlanAcademicoDAO {
         }
     }
 
+    /** Da de alta el plan: sus evidencias pasan a Seguimiento (RF-08). */
+    public void activate(int idPlanAcademico) throws SQLException {
+        String sql = "UPDATE PlanAcademico SET Activo = 1 WHERE IdPlanAcademico = ?";
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, idPlanAcademico);
+            ps.executeUpdate();
+        }
+    }
+
     /**
      * Elimina un plan académico y todas sus evidencias en una sola transacción (RF-09).
      *
@@ -157,7 +145,8 @@ public class PlanAcademicoDAO {
                 rs.getInt("IdPlanAcademico"),
                 rs.getString("NombrePlan"),
                 rs.getInt("AnioPlan"),
-                rs.getString("PeriodoPlan")
+                rs.getString("PeriodoPlan"),
+                rs.getInt("Activo") == 1
         );
     }
 }

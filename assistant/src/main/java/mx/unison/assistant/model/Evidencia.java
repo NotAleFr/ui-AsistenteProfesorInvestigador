@@ -5,7 +5,7 @@ import java.util.List;
 
 /**
  * Unidad central del sistema: representa una evidencia institucional registrada
- * por el profesor-investigador (tabla {@code Evidencia}, RF-01).
+ * por el profesor-investigador (tabla {@code Evidencia}, RF-04).
  * Incluye campos auxiliares resueltos mediante JOIN para evitar consultas repetitivas en la UI.
  */
 public class Evidencia {
@@ -19,12 +19,14 @@ public class Evidencia {
     private String fechaInicio;       // Formato ISO 8601: YYYY-MM-DD
     private String fechaFinalizacion; // Formato ISO 8601: YYYY-MM-DD
     private String fechaModificacion;
-    private int idOpcion;
+    private int idTipoEvidencia;
+    private int idOpcion;             // 0 = todavía sin opción (columna NULL)
     private int idEstatus;
     private int idAcreditacion;
     private int idPlanAcademico;
 
     // Atributos descriptivos obtenidos por JOIN con los catálogos normativos
+    private int idCategoria;
     private String nombreCategoria;
     private String claveCategoria;
     private String nombreTipoEvidencia;
@@ -101,6 +103,14 @@ public class Evidencia {
         this.fechaModificacion = fechaModificacion;
     }
 
+    public int getIdTipoEvidencia() {
+        return idTipoEvidencia;
+    }
+
+    public void setIdTipoEvidencia(int idTipoEvidencia) {
+        this.idTipoEvidencia = idTipoEvidencia;
+    }
+
     public int getIdOpcion() {
         return idOpcion;
     }
@@ -131,6 +141,14 @@ public class Evidencia {
 
     public void setIdPlanAcademico(int idPlanAcademico) {
         this.idPlanAcademico = idPlanAcademico;
+    }
+
+    public int getIdCategoria() {
+        return idCategoria;
+    }
+
+    public void setIdCategoria(int idCategoria) {
+        this.idCategoria = idCategoria;
     }
 
     public String getNombreCategoria() {

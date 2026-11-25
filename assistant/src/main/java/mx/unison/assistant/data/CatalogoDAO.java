@@ -7,7 +7,6 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import mx.unison.assistant.model.Acreditacion;
 import mx.unison.assistant.model.Categoria;
 import mx.unison.assistant.model.Estatus;
@@ -17,7 +16,7 @@ import mx.unison.assistant.model.TipoEvidencia;
 /**
  * Objeto de Acceso a Datos (DAO) para los catálogos normativos del Reglamento PEDPD:
  * {@code Categoria}, {@code TipoEvidencia}, {@code Opcion}, {@code Estatus} y {@code Acreditacion}.
- * Soporta consulta jerárquica (RF-20) y personalización de rubros (RF-21).
+ * Soporta consulta jerárquica y personalización de rubros.
  */
 public class CatalogoDAO {
 
@@ -44,33 +43,6 @@ public class CatalogoDAO {
             }
         }
         return list;
-    }
-
-    /**
-     * Busca una categoría por su nombre exacto (sin distinguir mayúsculas/minúsculas).
-     *
-     * @param nombreCategoria nombre de la categoría.
-     * @return {@link Optional} con la categoría encontrada.
-     * @throws SQLException si ocurre un error SQL.
-     */
-    public Optional<Categoria> findCategoriaByNombre(String nombreCategoria) throws SQLException {
-        String sql = "SELECT IdCategoria, ClaveCategoria, NombreCategoria, DefinicionCategoria "
-                   + "FROM Categoria WHERE LOWER(NombreCategoria) = LOWER(?)";
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, nombreCategoria);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    return Optional.of(new Categoria(
-                            rs.getInt("IdCategoria"),
-                            rs.getString("ClaveCategoria"),
-                            rs.getString("NombreCategoria"),
-                            rs.getString("DefinicionCategoria")
-                    ));
-                }
-            }
-        }
-        return Optional.empty();
     }
 
     /**
@@ -119,32 +91,7 @@ public class CatalogoDAO {
     }
 
     /**
-     * Busca un tipo de evidencia por su nombre exacto o por etiqueta combinada "Clave Nombre".
-     *
-     * @param nombreTipo nombre o etiqueta del tipo de actividad.
-     * @return {@link Optional} con el tipo de evidencia encontrado.
-     * @throws SQLException si ocurre un error SQL.
-     */
-    public Optional<TipoEvidencia> findTipoByNombre(String nombreTipo) throws SQLException {
-        String sql = "SELECT IdTipoEvidencia, ClaveTipoEvidencia, NombreTipoEvidencia, "
-                   + "DefinicionTipoEvidencia, ContenidoAcreditacion, PuntajeMaximo, IdCategoria "
-                   + "FROM TipoEvidencia WHERE LOWER(NombreTipoEvidencia) = LOWER(?) "
-                   + "OR LOWER(ClaveTipoEvidencia || ' ' || NombreTipoEvidencia) = LOWER(?)";
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, nombreTipo);
-            ps.setString(2, nombreTipo);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    return Optional.of(mapTipoEvidencia(rs));
-                }
-            }
-        }
-        return Optional.empty();
-    }
-
-    /**
-     * Inserta un nuevo tipo de evidencia personalizado en el catálogo (RF-21).
+     * Inserta un nuevo tipo de evidencia personalizado en el catálogo.
      *
      * @param tipo objeto {@link TipoEvidencia} con sus atributos.
      * @return el identificador autogenerado.
@@ -175,7 +122,7 @@ public class CatalogoDAO {
     }
 
     /**
-     * Actualiza los campos descriptivos y puntaje máximo de un tipo de evidencia existente (RF-21).
+     * Actualiza los campos descriptivos y puntaje máximo de un tipo de evidencia existente.
      *
      * @param tipo tipo de evidencia modificado.
      * @throws SQLException si ocurre un error SQL.
@@ -221,7 +168,7 @@ public class CatalogoDAO {
     }
 
     /**
-     * Inserta una nueva opción dentro de un tipo de evidencia (RF-21).
+     * Inserta una nueva opción dentro de un tipo de evidencia.
      *
      * @param opcion objeto {@link Opcion} a registrar.
      * @return identificador autogenerado.
@@ -249,7 +196,7 @@ public class CatalogoDAO {
     }
 
     /**
-     * Actualiza el nombre, puntaje y orden de una opción existente (RF-21).
+     * Actualiza el nombre, puntaje y orden de una opción existente.
      *
      * @param opcion opción modificada.
      * @throws SQLException si ocurre un error SQL.

@@ -2,7 +2,7 @@ package mx.unison.assistant.model;
 
 /**
  * Catálogo de estados de acreditación institucional de una evidencia (tabla {@code Acreditacion}).
- * Valores esperados según RF-01: "Pendiente", "En revisión", "Aceptado" y "Publicado".
+ * Valores esperados según la Tabla 3: "Pendiente", "En revisión", "Aceptado" y "Publicado".
  */
 public class Acreditacion {
 
@@ -36,5 +36,20 @@ public class Acreditacion {
     @Override
     public String toString() {
         return nombreAcreditacion;
+    }
+
+    // Compara por id para que JComboBox.setSelectedItem() encuentre el valor guardado
+    @Override
+    public boolean equals(Object other) {
+        if (!(other instanceof Acreditacion)) {
+            return false;
+        }
+        Acreditacion that = (Acreditacion) other;
+        return idAcreditacion == that.idAcreditacion;
+    }
+
+    @Override
+    public int hashCode() {
+        return idAcreditacion;
     }
 }

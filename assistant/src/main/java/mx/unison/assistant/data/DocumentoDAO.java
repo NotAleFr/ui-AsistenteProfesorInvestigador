@@ -10,7 +10,7 @@ import java.util.List;
 import mx.unison.assistant.model.Documento;
 
 /**
- * Objeto de Acceso a Datos (DAO) para la tabla {@code Documento} (RF-03, RF-04, RF-05).
+ * Objeto de Acceso a Datos (DAO) para la tabla {@code Documento} (RF-15).
  * Administra los metadatos y huellas SHA-256 de los archivos probatorios vinculados a evidencias.
  */
 public class DocumentoDAO {
@@ -40,7 +40,7 @@ public class DocumentoDAO {
     }
 
     /**
-     * Registra un nuevo documento probatorio asociado a una evidencia (RF-03).
+     * Registra un nuevo documento probatorio asociado a una evidencia (RF-15).
      *
      * @param doc objeto {@link Documento} con ruta, tamaño y huella SHA-256 calculada.
      * @return identificador autogenerado del documento.
@@ -69,7 +69,7 @@ public class DocumentoDAO {
     }
 
     /**
-     * Elimina un documento adjunto específico por su identificador (RF-04).
+     * Elimina un documento adjunto específico por su identificador (RF-15).
      *
      * @param idDocumento identificador del documento a eliminar.
      * @throws SQLException si ocurre un error SQL.

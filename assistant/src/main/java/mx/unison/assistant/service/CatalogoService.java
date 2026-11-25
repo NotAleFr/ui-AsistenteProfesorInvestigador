@@ -1,11 +1,8 @@
 package mx.unison.assistant.service;
 
-import java.io.IOException;
 import java.sql.SQLException;
 import java.util.List;
-import java.util.Optional;
 import mx.unison.assistant.data.CatalogoDAO;
-import mx.unison.assistant.data.DatabaseConnection;
 import mx.unison.assistant.model.Acreditacion;
 import mx.unison.assistant.model.Categoria;
 import mx.unison.assistant.model.Estatus;
@@ -14,159 +11,48 @@ import mx.unison.assistant.model.TipoEvidencia;
 
 /**
  * Servicio de lógica de negocio para la consulta y administración de los catálogos
- * normativos del Reglamento PEDPD (RF-20, RF-21, RF-22, RF-23).
+ * normativos del Reglamento PEDPD.
  * Reemplaza los métodos estáticos de catálogo de {@code SampleData}.
  */
 public class CatalogoService {
 
     private final CatalogoDAO catalogoDAO;
-    private final DocumentoService documentoService;
-
-    public CatalogoService() {
-        this(new CatalogoDAO(), new DocumentoService());
-    }
-
-    public CatalogoService(CatalogoDAO catalogoDAO, DocumentoService documentoService) {
+    public CatalogoService(CatalogoDAO catalogoDAO) {
         this.catalogoDAO = catalogoDAO;
-        this.documentoService = documentoService;
     }
 
-    /**
-     * Obtiene los nombres de todas las categorías normativas registradas.
-     *
-     * @return arreglo de nombres de categoría en el orden del Reglamento PEDPD.
-     * @throws SQLException si ocurre un error al consultar la base de datos.
-     */
-    public String[] getCategories() throws SQLException {
-        List<Categoria> categorias = catalogoDAO.findAllCategorias();
-        return categorias.stream()
-                .map(Categoria::getNombreCategoria)
-                .toArray(String[]::new);
-    }
-
-    /**
-     * Obtiene la lista completa de objetos {@link Categoria}.
-     *
-     * @return lista de categorías.
-     * @throws SQLException si ocurre un error SQL.
-     */
-    public List<Categoria> getAllCategorias() throws SQLException {
+    /** Categorías en el orden del Reglamento PEDPD, incluida "Otros" (RF-04). */
+    public List<Categoria> getCategories() throws SQLException {
         return catalogoDAO.findAllCategorias();
     }
 
-    /**
-     * Obtiene los nombres de los tipos de evidencia pertenecientes a una categoría.
-     *
-     * @param categoryName nombre de la categoría seleccionada.
-     * @return arreglo con los nombres de tipos de actividad correspondientes.
-     * @throws SQLException si ocurre un error SQL.
-     */
-    public String[] getTypes(String categoryName) throws SQLException {
-        Optional<Categoria> cat = catalogoDAO.findCategoriaByNombre(categoryName);
-        if (cat.isEmpty()) {
-            return new String[0];
-        }
-        return catalogoDAO.findTiposByCategoria(cat.get().getIdCategoria()).stream()
-                .map(TipoEvidencia::getNombreTipoEvidencia)
-                .toArray(String[]::new);
+    /** Tipos de actividad de una categoría (RF-04). */
+    public List<TipoEvidencia> getTypes(int idCategoria) throws SQLException {
+        return catalogoDAO.findTiposByCategoria(idCategoria);
+    }
+
+    /** Todos los tipos de actividad, para el filtro de Seguimiento (RF-11). */
+    public List<TipoEvidencia> getAllTypes() throws SQLException {
+        return catalogoDAO.findAllTipos();
+    }
+
+    /** Opciones de evaluación de un tipo de actividad (Tabla 3). */
+    public List<Opcion> getOptions(int idTipoEvidencia) throws SQLException {
+        return catalogoDAO.findOpcionesByTipo(idTipoEvidencia);
+    }
+
+    /** Estatus de cumplimiento: Pendiente, En proceso, Entregado (Tabla 3). */
+    public List<Estatus> getStatuses() throws SQLException {
+        return catalogoDAO.findAllEstatus();
+    }
+
+    /** Estados de acreditación: Pendiente, En revisión, Aceptado, Publicado (Tabla 3). */
+    public List<Acreditacion> getAccreditations() throws SQLException {
+        return catalogoDAO.findAllAcreditaciones();
     }
 
     /**
-     * Obtiene todos los nombres de tipos de evidencia sin filtro de categoría (RF-13).
-     *
-     * @return arreglo con todos los tipos de evidencia.
-     * @throws SQLException si ocurre un error SQL.
-     */
-    public String[] getTypes() throws SQLException {
-        return catalogoDAO.findAllTipos().stream()
-                .map(TipoEvidencia::getNombreTipoEvidencia)
-                .toArray(String[]::new);
-    }
-
-    /**
-     * Obtiene las etiquetas formateadas {@code "Opción (N pts)"} para un tipo de evidencia.
-     *
-     * @param typeName nombre del tipo de actividad.
-     * @return arreglo con las opciones formateadas y su puntaje.
-     * @throws SQLException si ocurre un error SQL.
-     */
-    public String[] getOptions(String typeName) throws SQLException {
-        Optional<TipoEvidencia> tipo = catalogoDAO.findTipoByNombre(typeName);
-        if (tipo.isEmpty()) {
-            return new String[0];
-        }
-        return catalogoDAO.findOpcionesByTipo(tipo.get().getIdTipoEvidencia()).stream()
-                .map(Opcion::getFormattedLabel)
-                .toArray(String[]::new);
-    }
-
-    /**
-     * Obtiene la lista de entidades {@link Opcion} para un tipo de evidencia.
-     *
-     * @param typeName nombre del tipo de actividad.
-     * @return lista de opciones del tipo indicado.
-     * @throws SQLException si ocurre un error SQL.
-     */
-    public List<Opcion> getOpcionEntities(String typeName) throws SQLException {
-        Optional<TipoEvidencia> tipo = catalogoDAO.findTipoByNombre(typeName);
-        if (tipo.isEmpty()) {
-            return List.of();
-        }
-        return catalogoDAO.findOpcionesByTipo(tipo.get().getIdTipoEvidencia());
-    }
-
-    /**
-     * Obtiene la definición normativa de un tipo de evidencia.
-     *
-     * @param typeName nombre del tipo de evidencia.
-     * @return definición descriptiva o cadena vacía si no existe.
-     * @throws SQLException si ocurre un error SQL.
-     */
-    public String getDefinition(String typeName) throws SQLException {
-        return catalogoDAO.findTipoByNombre(typeName)
-                .map(t -> t.getDefinicionTipoEvidencia() != null ? t.getDefinicionTipoEvidencia() : "")
-                .orElse("");
-    }
-
-    /**
-     * Obtiene los criterios y documentos requeridos para acreditar un tipo de evidencia.
-     *
-     * @param typeName nombre del tipo de evidencia.
-     * @return contenido de acreditación o cadena vacía si no existe.
-     * @throws SQLException si ocurre un error SQL.
-     */
-    public String getAccreditation(String typeName) throws SQLException {
-        return catalogoDAO.findTipoByNombre(typeName)
-                .map(t -> t.getContenidoAcreditacion() != null ? t.getContenidoAcreditacion() : "")
-                .orElse("");
-    }
-
-    /**
-     * Obtiene los nombres de los estados de cumplimiento disponibles (RF-01).
-     *
-     * @return arreglo con los nombres de estatus.
-     * @throws SQLException si ocurre un error SQL.
-     */
-    public String[] getStatuses() throws SQLException {
-        return catalogoDAO.findAllEstatus().stream()
-                .map(Estatus::getNombreEstatus)
-                .toArray(String[]::new);
-    }
-
-    /**
-     * Obtiene los nombres de los estados de acreditación disponibles (RF-01).
-     *
-     * @return arreglo con los estados de acreditación.
-     * @throws SQLException si ocurre un error SQL.
-     */
-    public String[] getAccreditations() throws SQLException {
-        return catalogoDAO.findAllAcreditaciones().stream()
-                .map(Acreditacion::getNombreAcreditacion)
-                .toArray(String[]::new);
-    }
-
-    /**
-     * Registra un nuevo tipo de evidencia personalizado previa validación (RF-21).
+     * Registra un nuevo tipo de evidencia personalizado previa validación.
      *
      * @param tipo entidad {@link TipoEvidencia} con sus datos obligatorios.
      * @return identificador generado en la base de datos.
@@ -186,7 +72,7 @@ public class CatalogoService {
     }
 
     /**
-     * Actualiza un tipo de evidencia existente en el catálogo (RF-21).
+     * Actualiza un tipo de evidencia existente en el catálogo.
      *
      * @param tipo entidad modificada.
      * @throws SQLException si ocurre un error SQL.
@@ -202,7 +88,7 @@ public class CatalogoService {
     }
 
     /**
-     * Agrega una nueva opción de evaluación a un tipo de evidencia (RF-21).
+     * Agrega una nueva opción de evaluación a un tipo de evidencia.
      *
      * @param opcion entidad {@link Opcion} a registrar.
      * @return identificador generado.
@@ -219,7 +105,7 @@ public class CatalogoService {
     }
 
     /**
-     * Actualiza una opción existente del catálogo (RF-21).
+     * Actualiza una opción existente del catálogo.
      *
      * @param opcion entidad modificada.
      * @throws SQLException si ocurre un error SQL.
@@ -229,26 +115,5 @@ public class CatalogoService {
             throw new IllegalArgumentException("Identificador de opción inválido.");
         }
         catalogoDAO.updateOpcion(opcion);
-    }
-
-    /**
-     * Restaura las tablas del catálogo normativo a los valores originales del Reglamento PEDPD (RF-22).
-     *
-     * @throws SQLException si ocurre un error durante la restauración.
-     */
-    public void restoreDefaultCatalog() throws SQLException {
-        DatabaseConnection.restoreDefaultCatalog();
-    }
-
-    /**
-     * Elimina toda la información del sistema, borra los archivos adjuntos
-     * y restablece los catálogos de fábrica (RF-23).
-     *
-     * @throws SQLException si ocurre un error al limpiar la base de datos (no se borra ningún archivo).
-     * @throws IOException  si la BD se limpió pero algún archivo adjunto no se pudo borrar.
-     */
-    public void resetAllSystemData() throws SQLException, IOException {
-        DatabaseConnection.resetFullDatabase();
-        documentoService.deleteAllFiles();
     }
 }

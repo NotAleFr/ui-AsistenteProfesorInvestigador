@@ -1,7 +1,7 @@
 package mx.unison.assistant.model;
 
 /**
- * Representa una categoría normativa del Reglamento PEDPD (Anexo 1) y la categoría "Otros" (RF-01).
+ * Representa una categoría normativa del Reglamento PEDPD (Anexo 1) y la categoría "Otros" (RF-04).
  * Corresponde a la tabla {@code Categoria} en SQLite3.
  */
 public class Categoria {
@@ -56,5 +56,20 @@ public class Categoria {
     @Override
     public String toString() {
         return nombreCategoria;
+    }
+
+    // Compara por id para que JComboBox.setSelectedItem() encuentre el valor guardado
+    @Override
+    public boolean equals(Object other) {
+        if (!(other instanceof Categoria)) {
+            return false;
+        }
+        Categoria that = (Categoria) other;
+        return idCategoria == that.idCategoria;
+    }
+
+    @Override
+    public int hashCode() {
+        return idCategoria;
     }
 }
