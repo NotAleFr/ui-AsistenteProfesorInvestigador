@@ -10,15 +10,17 @@ public class PlanAcademico {
     private String nombrePlan;
     private int anioPlan;
     private String periodoPlan; // Formato YYYY-1 o YYYY-2
+    private boolean activo;     // false = borrador (RF-07), true = en Seguimiento (RF-08)
 
     public PlanAcademico() {
     }
 
-    public PlanAcademico(int idPlanAcademico, String nombrePlan, int anioPlan, String periodoPlan) {
+    public PlanAcademico(int idPlanAcademico, String nombrePlan, int anioPlan, String periodoPlan, boolean activo) {
         this.idPlanAcademico = idPlanAcademico;
         this.nombrePlan = nombrePlan;
         this.anioPlan = anioPlan;
         this.periodoPlan = periodoPlan;
+        this.activo = activo;
     }
 
     public int getIdPlanAcademico() {
@@ -53,8 +55,31 @@ public class PlanAcademico {
         this.periodoPlan = periodoPlan;
     }
 
+    public boolean isActivo() {
+        return activo;
+    }
+
+    public void setActivo(boolean activo) {
+        this.activo = activo;
+    }
+
     @Override
     public String toString() {
         return nombrePlan;
+    }
+
+    // Compara por id para que JComboBox.setSelectedItem() encuentre el valor guardado
+    @Override
+    public boolean equals(Object other) {
+        if (!(other instanceof PlanAcademico)) {
+            return false;
+        }
+        PlanAcademico that = (PlanAcademico) other;
+        return idPlanAcademico == that.idPlanAcademico;
+    }
+
+    @Override
+    public int hashCode() {
+        return idPlanAcademico;
     }
 }

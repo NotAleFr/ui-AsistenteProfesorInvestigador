@@ -57,4 +57,19 @@ public class Categoria {
     public String toString() {
         return nombreCategoria;
     }
+
+    // Compara por id para que JComboBox.setSelectedItem() encuentre el valor guardado
+    @Override
+    public boolean equals(Object other) {
+        if (!(other instanceof Categoria)) {
+            return false;
+        }
+        Categoria that = (Categoria) other;
+        return idCategoria == that.idCategoria;
+    }
+
+    @Override
+    public int hashCode() {
+        return idCategoria;
+    }
 }

@@ -110,7 +110,7 @@ public class PlanService {
             throw new IllegalArgumentException("El periodo debe tener el formato YYYY-1 o YYYY-2.");
         }
         int anio = Integer.parseInt(periodoPlan.substring(0, 4));
-        PlanAcademico plan = new PlanAcademico(0, nombrePlan.trim(), anio, periodoPlan.trim());
+        PlanAcademico plan = new PlanAcademico(0, nombrePlan.trim(), anio, periodoPlan.trim(), false);
         planDAO.insert(plan);
         return plan;
     }

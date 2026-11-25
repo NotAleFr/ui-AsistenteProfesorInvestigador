@@ -77,4 +77,19 @@ public class TipoEvidencia {
     public String toString() {
         return nombreTipoEvidencia;
     }
+
+    // Compara por id para que JComboBox.setSelectedItem() encuentre el valor guardado
+    @Override
+    public boolean equals(Object other) {
+        if (!(other instanceof TipoEvidencia)) {
+            return false;
+        }
+        TipoEvidencia that = (TipoEvidencia) other;
+        return idTipoEvidencia == that.idTipoEvidencia;
+    }
+
+    @Override
+    public int hashCode() {
+        return idTipoEvidencia;
+    }
 }

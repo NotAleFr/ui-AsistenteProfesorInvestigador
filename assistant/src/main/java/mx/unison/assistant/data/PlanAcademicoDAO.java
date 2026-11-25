@@ -23,7 +23,7 @@ public class PlanAcademicoDAO {
      * @throws SQLException si ocurre un error SQL.
      */
     public List<PlanAcademico> findAll() throws SQLException {
-        String sql = "SELECT IdPlanAcademico, NombrePlan, AnioPlan, PeriodoPlan "
+        String sql = "SELECT IdPlanAcademico, NombrePlan, AnioPlan, PeriodoPlan, Activo "
                    + "FROM PlanAcademico ORDER BY AnioPlan DESC, PeriodoPlan DESC, IdPlanAcademico ASC";
         List<PlanAcademico> list = new ArrayList<>();
         try (Connection conn = DatabaseConnection.getConnection();
@@ -44,7 +44,7 @@ public class PlanAcademicoDAO {
      * @throws SQLException si ocurre un error SQL.
      */
     public Optional<PlanAcademico> findById(int idPlanAcademico) throws SQLException {
-        String sql = "SELECT IdPlanAcademico, NombrePlan, AnioPlan, PeriodoPlan "
+        String sql = "SELECT IdPlanAcademico, NombrePlan, AnioPlan, PeriodoPlan, Activo "
                    + "FROM PlanAcademico WHERE IdPlanAcademico = ?";
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -66,7 +66,7 @@ public class PlanAcademicoDAO {
      * @throws SQLException si ocurre un error SQL.
      */
     public Optional<PlanAcademico> findByNombre(String nombrePlan) throws SQLException {
-        String sql = "SELECT IdPlanAcademico, NombrePlan, AnioPlan, PeriodoPlan "
+        String sql = "SELECT IdPlanAcademico, NombrePlan, AnioPlan, PeriodoPlan, Activo "
                    + "FROM PlanAcademico WHERE NombrePlan = ?";
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -157,7 +157,8 @@ public class PlanAcademicoDAO {
                 rs.getInt("IdPlanAcademico"),
                 rs.getString("NombrePlan"),
                 rs.getInt("AnioPlan"),
-                rs.getString("PeriodoPlan")
+                rs.getString("PeriodoPlan"),
+                rs.getInt("Activo") == 1
         );
     }
 }

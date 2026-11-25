@@ -37,4 +37,19 @@ public class Acreditacion {
     public String toString() {
         return nombreAcreditacion;
     }
+
+    // Compara por id para que JComboBox.setSelectedItem() encuentre el valor guardado
+    @Override
+    public boolean equals(Object other) {
+        if (!(other instanceof Acreditacion)) {
+            return false;
+        }
+        Acreditacion that = (Acreditacion) other;
+        return idAcreditacion == that.idAcreditacion;
+    }
+
+    @Override
+    public int hashCode() {
+        return idAcreditacion;
+    }
 }

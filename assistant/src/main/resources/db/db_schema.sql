@@ -31,6 +31,7 @@ CREATE TABLE Opcion (
     OrdenOpcion     INTEGER NOT NULL,
     IdTipoEvidencia INTEGER NOT NULL,
     UNIQUE (IdTipoEvidencia, OrdenOpcion),
+    UNIQUE (IdOpcion, IdTipoEvidencia),
     FOREIGN KEY (IdTipoEvidencia) REFERENCES TipoEvidencia (IdTipoEvidencia)
         ON UPDATE CASCADE ON DELETE RESTRICT
 ) STRICT;
@@ -56,13 +57,17 @@ CREATE TABLE Evidencia (
     FechaInicio       TEXT,                -- ISO 8601: YYYY-MM-DD
     FechaFinalizacion TEXT,                -- ISO 8601: YYYY-MM-DD
     FechaModificacion TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    IdOpcion          INTEGER NOT NULL,
+    IdTipoEvidencia   INTEGER NOT NULL,
+    IdOpcion          INTEGER,             -- se elige en Seguimiento; NULL mientras no se elija
     IdEstatus         INTEGER NOT NULL DEFAULT 1,   -- 1 = Pendiente
     IdAcreditacion    INTEGER NOT NULL DEFAULT 1,   -- 1 = Pendiente
     IdPlanAcademico   INTEGER NOT NULL,
     CHECK (FechaInicio IS NULL OR FechaFinalizacion IS NULL
            OR FechaFinalizacion >= FechaInicio),
-    FOREIGN KEY (IdOpcion)        REFERENCES Opcion (IdOpcion)
+    FOREIGN KEY (IdTipoEvidencia) REFERENCES TipoEvidencia (IdTipoEvidencia)
+        ON UPDATE CASCADE ON DELETE RESTRICT,
+    -- La opción debe pertenecer al mismo tipo de actividad de la evidencia
+    FOREIGN KEY (IdOpcion, IdTipoEvidencia) REFERENCES Opcion (IdOpcion, IdTipoEvidencia)
         ON UPDATE CASCADE ON DELETE RESTRICT,
     FOREIGN KEY (IdEstatus)       REFERENCES Estatus (IdEstatus)
         ON UPDATE CASCADE ON DELETE RESTRICT,
@@ -88,7 +93,8 @@ CREATE TABLE PlanAcademico (
     IdPlanAcademico INTEGER PRIMARY KEY AUTOINCREMENT,
     NombrePlan      TEXT NOT NULL,
     AnioPlan        INTEGER NOT NULL,
-    PeriodoPlan     TEXT NOT NULL
+    PeriodoPlan     TEXT NOT NULL,
+    Activo          INTEGER NOT NULL DEFAULT 0 CHECK (Activo IN (0, 1))  -- 0 = borrador (RF-07), 1 = en Seguimiento (RF-08)
 ) STRICT;
 
 CREATE TABLE Alertas (
@@ -100,6 +106,7 @@ CREATE TABLE Alertas (
 -- ---------- Índices sobre llaves foráneas ----------
 
 CREATE INDEX idx_tipoevidencia_categoria ON TipoEvidencia (IdCategoria);
+CREATE INDEX idx_evidencia_tipo          ON Evidencia (IdTipoEvidencia);
 CREATE INDEX idx_evidencia_opcion        ON Evidencia (IdOpcion);
 CREATE INDEX idx_evidencia_estatus       ON Evidencia (IdEstatus);
 CREATE INDEX idx_evidencia_acreditacion  ON Evidencia (IdAcreditacion);

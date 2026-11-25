@@ -9,6 +9,8 @@ import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.List;
 import mx.unison.assistant.data.AlertaDAO;
+import mx.unison.assistant.data.CatalogoDAO;
+import mx.unison.assistant.data.EvidenciaDAO;
 import mx.unison.assistant.data.DatabaseConnection;
 import mx.unison.assistant.model.Documento;
 import mx.unison.assistant.model.Evidencia;
@@ -93,6 +95,7 @@ class BackendServicesTest {
         ev.setPeriodo("2026-2");
         ev.setFechaInicio("2026-01-15");
         ev.setFechaFinalizacion("2026-06-30");
+        ev.setIdTipoEvidencia(1); // Diseño de Planes de Estudio
         ev.setIdOpcion(1); // Coordinador (80 pts)
         ev.setIdEstatus(1); // Pendiente
         ev.setIdAcreditacion(1); // Pendiente
@@ -141,6 +144,7 @@ class BackendServicesTest {
         Evidencia ev = new Evidencia();
         ev.setTitulo("Actividad con archivo inválido");
         ev.setPeriodo("2026-2");
+        ev.setIdTipoEvidencia(1);
         ev.setIdOpcion(1);
 
         assertThrows(Exception.class, () ->
@@ -229,10 +233,44 @@ class BackendServicesTest {
         assertEquals(2, alertaDAO.findAll().size());
     }
 
+    @Test
+    void testRegistroSinOpcionSeGuarda() throws Exception {
+        // RF-04: el registro del plan tiene tipo de actividad pero todavía no tiene opción
+        PlanAcademico plan = planService.createPlan("Plan sin opcion", "2026-2");
+        Evidencia ev = nuevaEvidencia(plan.getIdPlanAcademico());
+        ev.setIdOpcion(0);
+        EvidenciaDAO evidenciaDAO = new EvidenciaDAO();
+        int id = evidenciaDAO.insert(ev);
+
+        Evidencia leida = evidenciaDAO.findById(id).orElseThrow();
+        assertEquals(0, leida.getIdOpcion());
+        assertNull(leida.getNombreOpcion());
+        assertEquals(1, leida.getIdTipoEvidencia());
+        assertEquals(1, leida.getIdCategoria());
+        assertEquals("Productividad Docente", leida.getNombreCategoria());
+    }
+
+    @Test
+    void testOpcionDeOtroTipoSeRechaza() throws Exception {
+        PlanAcademico plan = planService.createPlan("Plan opcion ajena", "2026-2");
+        Evidencia ev = nuevaEvidencia(plan.getIdPlanAcademico());
+        ev.setIdOpcion(4); // La opción 4 es del tipo 2, no del tipo 1
+
+        assertThrows(SQLException.class, () -> new EvidenciaDAO().insert(ev));
+    }
+
+    @Test
+    void testCatalogoSeComparaPorId() throws Exception {
+        CatalogoDAO catalogoDAO = new CatalogoDAO();
+        assertEquals(catalogoDAO.findAllCategorias().get(0), catalogoDAO.findAllCategorias().get(0));
+    }
+
     private Evidencia nuevaEvidencia(int idPlan) {
         Evidencia ev = new Evidencia();
         ev.setTitulo("Evidencia de prueba");
         ev.setPeriodo("2026-2");
+        ev.setAnio(2026);
+        ev.setIdTipoEvidencia(1);
         ev.setIdOpcion(1);
         ev.setIdPlanAcademico(idPlan);
         return ev;
