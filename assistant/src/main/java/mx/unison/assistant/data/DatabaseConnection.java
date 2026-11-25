@@ -92,7 +92,6 @@ public class DatabaseConnection {
                 try {
                     executeSqlScript(conn, "/db/db_schema.sql");
                     executeSqlScript(conn, "/db/db_data.sql");
-                    seedDefaultPlanIfNeeded(conn);
                     conn.commit();
                 } catch (SQLException e) {
                     conn.rollback();
@@ -130,7 +129,6 @@ public class DatabaseConnection {
                 deleteAllRows(conn, "Alertas", "Documento", "Evidencia", "PlanAcademico",
                         "Opcion", "TipoEvidencia", "Categoria", "Estatus", "Acreditacion");
                 executeSqlScript(conn, "/db/db_data.sql");
-                seedDefaultPlanIfNeeded(conn);
             });
         }
     }
@@ -176,21 +174,6 @@ public class DatabaseConnection {
         try (Statement stmt = conn.createStatement()) {
             for (String table : tables) {
                 stmt.execute("DELETE FROM " + table + ";");
-            }
-        }
-    }
-
-    /**
-     * Crea un plan académico base por defecto si no existe ninguno, garantizando que
-     * cualquier evidencia directa tenga una llave foránea válida en {@code PlanAcademico}.
-     */
-    private static void seedDefaultPlanIfNeeded(Connection conn) throws SQLException {
-        try (Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM PlanAcademico")) {
-            if (rs.next() && rs.getInt(1) == 0) {
-                int currentYear = java.time.Year.now().getValue();
-                stmt.executeUpdate("INSERT INTO PlanAcademico (IdPlanAcademico, NombrePlan, AnioPlan, PeriodoPlan) "
-                        + "VALUES (1, 'Plan General " + currentYear + "-1', " + currentYear + ", '" + currentYear + "-1')");
             }
         }
     }

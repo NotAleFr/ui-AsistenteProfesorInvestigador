@@ -57,6 +57,23 @@ public class EvidenciaDAO {
         return list;
     }
 
+    public List<Evidencia> findActive() throws SQLException {
+        String sql = BASE_SELECT
+                + "INNER JOIN PlanAcademico p ON e.IdPlanAcademico = p.IdPlanAcademico "
+                + "WHERE p.Activo = 1 ORDER BY e.Anio DESC, e.Periodo DESC, e.IdEvidencia DESC";
+        List<Evidencia> list = new ArrayList<>();
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                Evidencia ev = mapRow(rs);
+                ev.setDocumentos(documentoDAO.findByEvidencia(ev.getIdEvidencia()));
+                list.add(ev);
+            }
+        }
+        return list;
+    }
+
     /**
      * Obtiene todas las evidencias pertenecientes a un plan académico específico (RF-02).
      *
@@ -175,7 +192,7 @@ public class EvidenciaDAO {
             setOpcion(ps, 8, ev.getIdOpcion());
             ps.setInt(9, ev.getIdEstatus() > 0 ? ev.getIdEstatus() : 1);
             ps.setInt(10, ev.getIdAcreditacion() > 0 ? ev.getIdAcreditacion() : 1);
-            ps.setInt(11, ev.getIdPlanAcademico() > 0 ? ev.getIdPlanAcademico() : 1);
+            ps.setInt(11, ev.getIdPlanAcademico());
             ps.executeUpdate();
             try (ResultSet keys = ps.getGeneratedKeys()) {
                 if (keys.next()) {
@@ -188,9 +205,25 @@ public class EvidenciaDAO {
         return -1;
     }
 
+    public void updatePlanFields(Evidencia ev) throws SQLException {
+        String sql = "UPDATE Evidencia SET Titulo = ?, Descripcion = ?, Anio = ?, Periodo = ?, "
+                   + "IdTipoEvidencia = ?, IdOpcion = ? WHERE IdEvidencia = ?";
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, ev.getTitulo());
+            ps.setString(2, ev.getDescripcion());
+            ps.setInt(3, ev.getAnio());
+            ps.setString(4, ev.getPeriodo());
+            ps.setInt(5, ev.getIdTipoEvidencia());
+            setOpcion(ps, 6, ev.getIdOpcion());
+            ps.setInt(7, ev.getIdEvidencia());
+            ps.executeUpdate();
+        }
+    }
+
     /**
-     * Actualiza una evidencia existente (RF-05). El trigger de SQLite actualiza
-     * automáticamente {@code FechaModificacion}.
+     * Guarda el seguimiento de una evidencia (Tabla 3). No cambia el plan al que pertenece.
+     * El trigger de SQLite actualiza automáticamente {@code FechaModificacion}.
      *
      * @param ev evidencia con los cambios aplicados.
      * @throws SQLException si ocurre un error SQL.
@@ -198,7 +231,7 @@ public class EvidenciaDAO {
     public void update(Evidencia ev) throws SQLException {
         String sql = "UPDATE Evidencia SET Titulo = ?, Descripcion = ?, Anio = ?, Periodo = ?, "
                    + "FechaInicio = ?, FechaFinalizacion = ?, IdTipoEvidencia = ?, IdOpcion = ?, IdEstatus = ?, "
-                   + "IdAcreditacion = ?, IdPlanAcademico = ? WHERE IdEvidencia = ?";
+                   + "IdAcreditacion = ? WHERE IdEvidencia = ?";
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, ev.getTitulo());
@@ -211,8 +244,7 @@ public class EvidenciaDAO {
             setOpcion(ps, 8, ev.getIdOpcion());
             ps.setInt(9, ev.getIdEstatus());
             ps.setInt(10, ev.getIdAcreditacion());
-            ps.setInt(11, ev.getIdPlanAcademico());
-            ps.setInt(12, ev.getIdEvidencia());
+            ps.setInt(11, ev.getIdEvidencia());
             ps.executeUpdate();
         }
     }
@@ -233,6 +265,7 @@ public class EvidenciaDAO {
         }
     }
 
+    // Sin opción elegida (id 0) se guarda NULL
     private void setOpcion(PreparedStatement ps, int index, int idOpcion) throws SQLException {
         if (idOpcion > 0) {
             ps.setInt(index, idOpcion);

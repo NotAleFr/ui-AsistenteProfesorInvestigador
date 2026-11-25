@@ -59,28 +59,6 @@ public class PlanAcademicoDAO {
     }
 
     /**
-     * Busca un plan académico por su nombre exacto.
-     *
-     * @param nombrePlan nombre del plan.
-     * @return {@link Optional} con el plan encontrado.
-     * @throws SQLException si ocurre un error SQL.
-     */
-    public Optional<PlanAcademico> findByNombre(String nombrePlan) throws SQLException {
-        String sql = "SELECT IdPlanAcademico, NombrePlan, AnioPlan, PeriodoPlan, Activo "
-                   + "FROM PlanAcademico WHERE NombrePlan = ?";
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, nombrePlan);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    return Optional.of(mapRow(rs));
-                }
-            }
-        }
-        return Optional.empty();
-    }
-
-    /**
      * Inserta un nuevo plan académico en la base de datos.
      *
      * @param plan objeto {@link PlanAcademico} a guardar.
@@ -121,6 +99,16 @@ public class PlanAcademicoDAO {
             ps.setInt(2, plan.getAnioPlan());
             ps.setString(3, plan.getPeriodoPlan());
             ps.setInt(4, plan.getIdPlanAcademico());
+            ps.executeUpdate();
+        }
+    }
+
+    /** Da de alta el plan: sus evidencias pasan a Seguimiento (RF-08). */
+    public void activate(int idPlanAcademico) throws SQLException {
+        String sql = "UPDATE PlanAcademico SET Activo = 1 WHERE IdPlanAcademico = ?";
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, idPlanAcademico);
             ps.executeUpdate();
         }
     }

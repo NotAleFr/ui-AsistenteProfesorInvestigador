@@ -1,7 +1,6 @@
 package mx.unison.assistant.service;
 
 import java.sql.SQLException;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import mx.unison.assistant.data.AlertaDAO;
@@ -9,6 +8,7 @@ import mx.unison.assistant.data.EvidenciaDAO;
 import mx.unison.assistant.model.Alerta;
 import mx.unison.assistant.model.Documento;
 import mx.unison.assistant.model.Evidencia;
+import mx.unison.assistant.model.Periodo;
 
 /**
  * Servicio de evaluación de reglas de negocio para la Bandeja de Notificaciones
@@ -40,7 +40,7 @@ public class AlertaService {
     public List<String> checkAlerts() throws SQLException {
         List<Evidencia> evidencias = evidenciaDAO.findAll();
         List<String> alerts = new ArrayList<>();
-        String currentPeriod = getCurrentPeriod();
+        String currentPeriod = Periodo.current();
 
         int sinDocumentosCount = 0;
         int entregadosSinDocCount = 0;
@@ -108,6 +108,7 @@ public class AlertaService {
     public List<String> getDetailedAlerts() throws SQLException {
         List<Evidencia> evidencias = evidenciaDAO.findAll();
         List<String> detailed = new ArrayList<>();
+        String currentPeriod = Periodo.current();
 
         for (Evidencia ev : evidencias) {
             List<Documento> docs = ev.getDocumentos();
@@ -125,7 +126,8 @@ public class AlertaService {
                         + " (" + ev.getNombreTipoEvidencia() + " | " + ev.getPeriodo() + ")" + nota);
             }
 
-            if (!"Entregado".equalsIgnoreCase(estatus)) {
+            // Regla 2 del RF-19: solo las del periodo actual
+            if (currentPeriod.equals(ev.getPeriodo()) && !"Entregado".equalsIgnoreCase(estatus)) {
                 detailed.add("[Estatus: " + estatus + "] " + ev.getTitulo()
                         + " (" + ev.getNombreTipoEvidencia() + " | " + ev.getPeriodo() + ")" + nota);
             }
@@ -156,11 +158,5 @@ public class AlertaService {
             }
         }
         return false;
-    }
-
-    private String getCurrentPeriod() {
-        LocalDate now = LocalDate.now();
-        int semester = (now.getMonthValue() <= 6) ? 1 : 2;
-        return now.getYear() + "-" + semester;
     }
 }

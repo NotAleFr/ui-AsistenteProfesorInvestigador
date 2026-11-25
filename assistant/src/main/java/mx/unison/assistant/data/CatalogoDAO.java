@@ -7,7 +7,6 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import mx.unison.assistant.model.Acreditacion;
 import mx.unison.assistant.model.Categoria;
 import mx.unison.assistant.model.Estatus;
@@ -44,33 +43,6 @@ public class CatalogoDAO {
             }
         }
         return list;
-    }
-
-    /**
-     * Busca una categoría por su nombre exacto (sin distinguir mayúsculas/minúsculas).
-     *
-     * @param nombreCategoria nombre de la categoría.
-     * @return {@link Optional} con la categoría encontrada.
-     * @throws SQLException si ocurre un error SQL.
-     */
-    public Optional<Categoria> findCategoriaByNombre(String nombreCategoria) throws SQLException {
-        String sql = "SELECT IdCategoria, ClaveCategoria, NombreCategoria, DefinicionCategoria "
-                   + "FROM Categoria WHERE LOWER(NombreCategoria) = LOWER(?)";
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, nombreCategoria);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    return Optional.of(new Categoria(
-                            rs.getInt("IdCategoria"),
-                            rs.getString("ClaveCategoria"),
-                            rs.getString("NombreCategoria"),
-                            rs.getString("DefinicionCategoria")
-                    ));
-                }
-            }
-        }
-        return Optional.empty();
     }
 
     /**
@@ -116,31 +88,6 @@ public class CatalogoDAO {
             }
         }
         return list;
-    }
-
-    /**
-     * Busca un tipo de evidencia por su nombre exacto o por etiqueta combinada "Clave Nombre".
-     *
-     * @param nombreTipo nombre o etiqueta del tipo de actividad.
-     * @return {@link Optional} con el tipo de evidencia encontrado.
-     * @throws SQLException si ocurre un error SQL.
-     */
-    public Optional<TipoEvidencia> findTipoByNombre(String nombreTipo) throws SQLException {
-        String sql = "SELECT IdTipoEvidencia, ClaveTipoEvidencia, NombreTipoEvidencia, "
-                   + "DefinicionTipoEvidencia, ContenidoAcreditacion, PuntajeMaximo, IdCategoria "
-                   + "FROM TipoEvidencia WHERE LOWER(NombreTipoEvidencia) = LOWER(?) "
-                   + "OR LOWER(ClaveTipoEvidencia || ' ' || NombreTipoEvidencia) = LOWER(?)";
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, nombreTipo);
-            ps.setString(2, nombreTipo);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    return Optional.of(mapTipoEvidencia(rs));
-                }
-            }
-        }
-        return Optional.empty();
     }
 
     /**
