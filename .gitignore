@@ -15,3 +15,7 @@ buildNumber.properties
 .project
 # JDT-specific (Eclipse Java Development Tools)
 .classpath
+
+# Base de datos y adjuntos que crea la aplicación al correr
+base_datos.db
+archivos_adjuntos/

@@ -20,11 +20,6 @@ public class AlertaService {
     private final EvidenciaDAO evidenciaDAO;
     private final AlertaDAO alertaDAO;
 
-    public AlertaService() {
-        this.evidenciaDAO = new EvidenciaDAO();
-        this.alertaDAO = new AlertaDAO();
-    }
-
     public AlertaService(EvidenciaDAO evidenciaDAO, AlertaDAO alertaDAO) {
         this.evidenciaDAO = evidenciaDAO;
         this.alertaDAO = alertaDAO;

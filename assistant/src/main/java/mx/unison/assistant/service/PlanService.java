@@ -19,10 +19,6 @@ public class PlanService {
     private final DocumentoService documentoService;
     private final AlertaService alertaService;
 
-    public PlanService() {
-        this(new PlanAcademicoDAO(), new EvidenciaDAO(), new DocumentoService(), new AlertaService());
-    }
-
     public PlanService(PlanAcademicoDAO planDAO, EvidenciaDAO evidenciaDAO,
                        DocumentoService documentoService, AlertaService alertaService) {
         this.planDAO = planDAO;

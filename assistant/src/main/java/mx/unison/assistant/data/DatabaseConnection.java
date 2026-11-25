@@ -22,6 +22,8 @@ import java.util.stream.Collectors;
 public class DatabaseConnection {
 
     private static final String DEFAULT_DB_PATH = "base_datos.db";
+    // mvn exec:java pone esta propiedad (ver pom.xml) para que la BD nueva traiga db_demo.sql
+    public static final String DEMO_PROPERTY = "asistente.demo";
     private static String dbFilePath = DEFAULT_DB_PATH;
     private static boolean initialized = false;
 
@@ -87,11 +89,18 @@ public class DatabaseConnection {
             }
 
             if (needsSchema) {
+                // Antes de la transacción, porque SQLite ignora este PRAGMA dentro de una
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("PRAGMA foreign_keys = ON;");
+                }
                 // En una transacción: si algo falla, no queda una BD a medias que ya no se vuelva a crear
                 conn.setAutoCommit(false);
                 try {
                     executeSqlScript(conn, "/db/db_schema.sql");
                     executeSqlScript(conn, "/db/db_data.sql");
+                    if ("true".equals(System.getProperty(DEMO_PROPERTY))) {
+                        executeSqlScript(conn, "/db/db_demo.sql");
+                    }
                     conn.commit();
                 } catch (SQLException e) {
                     conn.rollback();

@@ -110,6 +110,13 @@
         <version>3.7.0</version>
         <configuration>
           <mainClass>mx.unison.assistant.app.Main</mainClass>
+          <!-- En desarrollo la BD nueva trae datos de ejemplo (db_demo.sql) -->
+          <systemProperties>
+            <systemProperty>
+              <key>asistente.demo</key>
+              <value>true</value>
+            </systemProperty>
+          </systemProperties>
         </configuration>
       </plugin>
     </plugins>

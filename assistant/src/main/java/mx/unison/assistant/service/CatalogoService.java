@@ -17,10 +17,6 @@ import mx.unison.assistant.model.TipoEvidencia;
 public class CatalogoService {
 
     private final CatalogoDAO catalogoDAO;
-    public CatalogoService() {
-        this(new CatalogoDAO());
-    }
-
     public CatalogoService(CatalogoDAO catalogoDAO) {
         this.catalogoDAO = catalogoDAO;
     }

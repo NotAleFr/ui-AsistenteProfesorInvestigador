@@ -6,7 +6,6 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import mx.unison.assistant.data.AlertaDAO;
 import mx.unison.assistant.data.EvidenciaDAO;
 import mx.unison.assistant.model.Documento;
 import mx.unison.assistant.model.Evidencia;
@@ -27,12 +26,6 @@ public class EvidenciaService {
     private final EvidenciaDAO evidenciaDAO;
     private final DocumentoService documentoService;
     private final AlertaService alertaService;
-
-    public EvidenciaService() {
-        this.evidenciaDAO = new EvidenciaDAO();
-        this.documentoService = new DocumentoService();
-        this.alertaService = new AlertaService(evidenciaDAO, new AlertaDAO());
-    }
 
     public EvidenciaService(EvidenciaDAO evidenciaDAO, DocumentoService documentoService, AlertaService alertaService) {
         this.evidenciaDAO = evidenciaDAO;
