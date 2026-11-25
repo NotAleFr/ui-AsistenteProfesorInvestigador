@@ -11,7 +11,7 @@ import java.util.Optional;
 import mx.unison.assistant.model.Evidencia;
 
 /**
- * Objeto de Acceso a Datos (DAO) para la tabla {@code Evidencia} (RF-01, RF-04, RF-05, RF-06, RF-08).
+ * Objeto de Acceso a Datos (DAO) para la tabla {@code Evidencia} (RF-02, RF-04, RF-05, RF-06, RF-10, RF-18).
  * Resuelve mediante JOIN los catálogos asociados ({@code Categoria}, {@code TipoEvidencia},
  * {@code Opcion}, {@code Estatus} y {@code Acreditacion}) y adjunta sus documentos.
  */
@@ -57,7 +57,7 @@ public class EvidenciaDAO {
     }
 
     /**
-     * Obtiene todas las evidencias pertenecientes a un plan académico específico (RF-06).
+     * Obtiene todas las evidencias pertenecientes a un plan académico específico (RF-02).
      *
      * @param idPlanAcademico identificador del plan académico.
      * @return lista de evidencias del plan ordenadas por categoría.
@@ -105,7 +105,7 @@ public class EvidenciaDAO {
     }
 
     /**
-     * Obtiene las evidencias de un año calendario determinado (ambos semestres, RF-16).
+     * Obtiene las evidencias de un año calendario determinado (ambos semestres, RF-18).
      *
      * @param anio año académico (ej. 2026).
      * @return lista de evidencias del año indicado.
@@ -152,7 +152,7 @@ public class EvidenciaDAO {
     }
 
     /**
-     * Inserta un nuevo registro de evidencia institucional en SQLite (RF-01).
+     * Inserta un nuevo registro de evidencia institucional en SQLite (RF-04).
      *
      * @param ev objeto {@link Evidencia} a persistir.
      * @return identificador autogenerado de la evidencia.
@@ -187,7 +187,7 @@ public class EvidenciaDAO {
     }
 
     /**
-     * Actualiza una evidencia existente (RF-04). El trigger de SQLite actualiza
+     * Actualiza una evidencia existente (RF-05). El trigger de SQLite actualiza
      * automáticamente {@code FechaModificacion}.
      *
      * @param ev evidencia con los cambios aplicados.
@@ -216,7 +216,7 @@ public class EvidenciaDAO {
 
     /**
      * Elimina una evidencia de la base de datos. Por {@code ON DELETE CASCADE},
-     * SQLite elimina automáticamente sus filas vinculadas en {@code Documento} (RF-05).
+     * SQLite elimina automáticamente sus filas vinculadas en {@code Documento} (RF-06).
      *
      * @param idEvidencia identificador de la evidencia a borrar.
      * @throws SQLException si ocurre un error SQL.

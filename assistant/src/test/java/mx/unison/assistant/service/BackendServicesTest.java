@@ -5,7 +5,10 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.SQLException;
+import java.util.Arrays;
 import java.util.List;
+import mx.unison.assistant.data.AlertaDAO;
 import mx.unison.assistant.data.DatabaseConnection;
 import mx.unison.assistant.model.Documento;
 import mx.unison.assistant.model.Evidencia;
@@ -83,7 +86,7 @@ class BackendServicesTest {
         Files.writeString(samplePdf, "Contenido simulado de constancia oficial UNISON");
         File pdfFile = samplePdf.toFile();
 
-        // 3. Registrar evidencia con documento adjunto (RF-01 + RF-03)
+        // 3. Registrar evidencia con documento adjunto (RF-04 + RF-15)
         Evidencia ev = new Evidencia();
         ev.setTitulo("Diseño de Plan de Ingeniería de Software");
         ev.setDescripcion("Participación como coordinador de comisión");
@@ -104,7 +107,7 @@ class BackendServicesTest {
         assertEquals(64, doc.getSha256().length());
         assertTrue(doc.getRutaAlmacenamiento().contains("productividad_docente"));
 
-        // 4. Verificar cálculo de resumen (RF-11) y alertas (RF-17)
+        // 4. Verificar cálculo de resumen (RF-12) y alertas (RF-19)
         EvidenciaService.ResumenIndicadores resumen = evidenciaService.calculateSummary(
                 evidenciaService.findForTracking()
         );
@@ -125,7 +128,7 @@ class BackendServicesTest {
         assertEquals(1, resumenFinal.entregadas());
         assertEquals(100.0, resumenFinal.porcentajeAvance(), 0.01);
 
-        // 6. Eliminar evidencia (RF-05)
+        // 6. Eliminar evidencia (RF-06)
         evidenciaService.deleteEvidencia(guardada.getIdEvidencia());
         assertTrue(evidenciaService.findForTracking().isEmpty());
     }
@@ -213,6 +216,17 @@ class BackendServicesTest {
     void testCategoriaOtrosTieneTipoEvidencia() throws Exception {
         // RF-04: la categoría adicional "Otros" debe poder usarse
         assertEquals(1, catalogoService.getTypes("Otras evidencias").length);
+    }
+
+    @Test
+    void testAlertasAnterioresSeConservanSiFallaElReemplazo() throws Exception {
+        AlertaDAO alertaDAO = new AlertaDAO();
+        alertaDAO.replaceAll(List.of("Alerta 1", "Alerta 2"));
+
+        // ContenidoAlerta es NOT NULL: el segundo INSERT falla y se deshace todo el reemplazo
+        assertThrows(SQLException.class, () -> alertaDAO.replaceAll(Arrays.asList("Alerta nueva", null)));
+
+        assertEquals(2, alertaDAO.findAll().size());
     }
 
     private Evidencia nuevaEvidencia(int idPlan) {

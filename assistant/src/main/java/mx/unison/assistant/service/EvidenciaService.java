@@ -13,13 +13,13 @@ import mx.unison.assistant.model.Evidencia;
 
 /**
  * Servicio central de lógica de negocio para la gestión, búsqueda, filtrado y cálculo
- * de indicadores de Evidencias Institucionales (RF-01 a RF-13).
+ * de indicadores de Evidencias Institucionales (RF-04 a RF-06, RF-10 a RF-15).
  * Reemplaza los métodos de seguimiento de {@code SampleData}.
  */
 public class EvidenciaService {
 
     /**
-     * Estructura de resumen superior para las vistas tabulares (RF-11).
+     * Estructura de resumen superior para las vistas tabulares (RF-12).
      */
     public record ResumenIndicadores(
             int total,
@@ -46,7 +46,7 @@ public class EvidenciaService {
     }
 
     /**
-     * Obtiene todas las evidencias registradas para la vista de seguimiento (RF-08).
+     * Obtiene todas las evidencias registradas para la vista de seguimiento (RF-10).
      *
      * @return lista completa de {@link Evidencia}.
      * @throws SQLException si ocurre un error SQL.
@@ -93,7 +93,7 @@ public class EvidenciaService {
 
     /**
      * Valida y registra una nueva evidencia institucional, adjuntando archivos iniciales si existen,
-     * y actualiza la bandeja de notificaciones (RF-01, RF-03, RF-17).
+     * y actualiza la bandeja de notificaciones (RF-04, RF-15, RF-19).
      *
      * @param evidencia     entidad {@link Evidencia} a guardar.
      * @param filesToAttach lista opcional de archivos seleccionados por el usuario.
@@ -145,7 +145,7 @@ public class EvidenciaService {
 
     /**
      * Actualiza los datos de una evidencia existente, adjunta nuevos archivos si se proporcionan
-     * y refresca las alertas del sistema (RF-04, RF-10, RF-17).
+     * y refresca las alertas del sistema (RF-05, RF-19).
      *
      * @param evidencia evidencia modificada.
      * @param newFiles  archivos adicionales opcionales.
@@ -189,7 +189,7 @@ public class EvidenciaService {
     }
 
     /**
-     * Elimina una evidencia junto con sus documentos físicos y registros asociados (RF-05).
+     * Elimina una evidencia junto con sus documentos físicos y registros asociados (RF-06).
      *
      * @param idEvidencia identificador de la evidencia a eliminar.
      * @throws SQLException si ocurre un error SQL.
@@ -206,10 +206,10 @@ public class EvidenciaService {
     }
 
     /**
-     * Filtra una lista de evidencias aplicando los criterios combinados de búsqueda y tabla (RF-09, RF-12, RF-13).
+     * Filtra una lista de evidencias aplicando los criterios combinados de búsqueda y tabla (RF-11, RF-13).
      *
      * @param source            lista base de evidencias.
-     * @param query             texto libre para buscar en Título, Tipo de actividad o Descripción (RF-12).
+     * @param query             texto libre para buscar en Título, Tipo de actividad o Descripción (RF-13).
      * @param periodo           filtro de periodo ("Todos" o null para no filtrar).
      * @param categoria         filtro de categoría ("Todas" o null para no filtrar).
      * @param tipoActividad     filtro de tipo de actividad ("Todos" o null para no filtrar).
@@ -267,7 +267,7 @@ public class EvidenciaService {
     }
 
     /**
-     * Calcula los indicadores superiores de resumen para las evidencias listadas (RF-11).
+     * Calcula los indicadores superiores de resumen para las evidencias listadas (RF-12).
      *
      * @param evidencias lista visible en la vista actual.
      * @return {@link ResumenIndicadores} con conteos y porcentaje de avance.
@@ -298,7 +298,7 @@ public class EvidenciaService {
             throw new IllegalArgumentException("La evidencia no puede ser nula.");
         }
         if (ev.getTitulo() == null || ev.getTitulo().isBlank()) {
-            throw new IllegalArgumentException("El título de la evidencia es obligatorio (RF-01).");
+            throw new IllegalArgumentException("El título de la evidencia es obligatorio.");
         }
         if (ev.getPeriodo() == null || !ev.getPeriodo().matches("\\d{4}-[12]")) {
             throw new IllegalArgumentException("El periodo escolar es obligatorio y debe tener formato YYYY-1 o YYYY-2.");

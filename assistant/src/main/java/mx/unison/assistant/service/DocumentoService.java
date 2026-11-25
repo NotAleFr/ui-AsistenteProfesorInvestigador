@@ -16,7 +16,7 @@ import mx.unison.assistant.data.DocumentoDAO;
 import mx.unison.assistant.model.Documento;
 
 /**
- * Servicio encargado de gestionar los archivos probatorios adjuntos a evidencias (RF-03, IS-3.3):
+ * Servicio encargado de gestionar los archivos probatorios adjuntos a evidencias (RF-15, IS-3.3):
  * valida extensiones permitidas, copia el archivo físico a su subcarpeta de categoría,
  * calcula su huella SHA-256 y tamaño en bytes, y registra sus metadatos en SQLite.
  */
@@ -41,7 +41,7 @@ public class DocumentoService {
     }
 
     /**
-     * Valida, copia al almacenamiento local y registra un archivo adjunto vinculado a una evidencia (RF-03).
+     * Valida, copia al almacenamiento local y registra un archivo adjunto vinculado a una evidencia (RF-15).
      *
      * @param sourceFile    archivo seleccionado por el usuario desde el sistema operativo.
      * @param idEvidencia   identificador de la evidencia destino.
@@ -117,7 +117,7 @@ public class DocumentoService {
     }
 
     /**
-     * Elimina el registro en base de datos y el archivo físico en disco de un documento adjunto (RF-04, RF-05).
+     * Elimina el registro en base de datos y el archivo físico en disco de un documento adjunto (RF-15).
      *
      * @param doc documento a eliminar.
      * @throws SQLException si falla el borrado en SQLite.
@@ -202,7 +202,7 @@ public class DocumentoService {
     }
 
     /**
-     * Calcula la huella criptográfica SHA-256 en formato hexadecimal de 64 caracteres (RF-03).
+     * Calcula la huella criptográfica SHA-256 en formato hexadecimal de 64 caracteres (RF-15).
      *
      * @param file archivo a procesar.
      * @return cadena hexadecimal en minúsculas de 64 caracteres.

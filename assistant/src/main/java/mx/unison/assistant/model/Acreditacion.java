@@ -2,7 +2,7 @@ package mx.unison.assistant.model;
 
 /**
  * Catálogo de estados de acreditación institucional de una evidencia (tabla {@code Acreditacion}).
- * Valores esperados según RF-01: "Pendiente", "En revisión", "Aceptado" y "Publicado".
+ * Valores esperados según la Tabla 3: "Pendiente", "En revisión", "Aceptado" y "Publicado".
  */
 public class Acreditacion {
 

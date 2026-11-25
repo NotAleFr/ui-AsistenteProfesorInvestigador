@@ -2,8 +2,10 @@ package mx.unison.assistant.data;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -60,12 +62,15 @@ public class DatabaseConnection {
         Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbFilePath);
         try (Statement stmt = conn.createStatement()) {
             stmt.execute("PRAGMA foreign_keys = ON;");
+        } catch (SQLException e) {
+            conn.close();
+            throw e;
         }
         return conn;
     }
 
     /**
-     * Verifica si la tabla {@code Categoria} existe y tiene registros; de lo contrario,
+     * Verifica si la tabla {@code Categoria} existe; de lo contrario,
      * ejecuta {@code db/db_schema.sql} y {@code db/db_data.sql} desde los recursos del proyecto.
      */
     private static void initializeDatabaseIfNeeded() throws SQLException {
@@ -205,7 +210,7 @@ public class DatabaseConnection {
             rawSql = reader.lines()
                     .filter(line -> !line.trim().startsWith("--"))
                     .collect(Collectors.joining("\n"));
-        } catch (Exception e) {
+        } catch (IOException | UncheckedIOException e) {
             throw new SQLException("Error leyendo script SQL: " + resourcePath, e);
         }
 

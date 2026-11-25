@@ -12,7 +12,7 @@ import mx.unison.assistant.model.PlanAcademico;
 
 /**
  * Objeto de Acceso a Datos (DAO) para la tabla {@code PlanAcademico}.
- * Permite listar, crear, actualizar y eliminar planes de trabajo semestrales (RF-06).
+ * Permite listar, crear, actualizar y eliminar planes de trabajo semestrales (RF-01, RF-02, RF-09).
  */
 public class PlanAcademicoDAO {
 

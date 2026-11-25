@@ -14,7 +14,7 @@ import mx.unison.assistant.model.TipoEvidencia;
 
 /**
  * Servicio de lógica de negocio para la consulta y administración de los catálogos
- * normativos del Reglamento PEDPD (RF-20, RF-21, RF-22, RF-23).
+ * normativos del Reglamento PEDPD (RF-22, RF-23).
  * Reemplaza los métodos estáticos de catálogo de {@code SampleData}.
  */
 public class CatalogoService {
@@ -72,7 +72,7 @@ public class CatalogoService {
     }
 
     /**
-     * Obtiene todos los nombres de tipos de evidencia sin filtro de categoría (RF-13).
+     * Obtiene todos los nombres de tipos de evidencia sin filtro de categoría (RF-11).
      *
      * @return arreglo con todos los tipos de evidencia.
      * @throws SQLException si ocurre un error SQL.
@@ -142,7 +142,7 @@ public class CatalogoService {
     }
 
     /**
-     * Obtiene los nombres de los estados de cumplimiento disponibles (RF-01).
+     * Obtiene los nombres de los estados de cumplimiento disponibles (Tabla 3).
      *
      * @return arreglo con los nombres de estatus.
      * @throws SQLException si ocurre un error SQL.
@@ -154,7 +154,7 @@ public class CatalogoService {
     }
 
     /**
-     * Obtiene los nombres de los estados de acreditación disponibles (RF-01).
+     * Obtiene los nombres de los estados de acreditación disponibles (Tabla 3).
      *
      * @return arreglo con los estados de acreditación.
      * @throws SQLException si ocurre un error SQL.
@@ -166,7 +166,7 @@ public class CatalogoService {
     }
 
     /**
-     * Registra un nuevo tipo de evidencia personalizado previa validación (RF-21).
+     * Registra un nuevo tipo de evidencia personalizado previa validación.
      *
      * @param tipo entidad {@link TipoEvidencia} con sus datos obligatorios.
      * @return identificador generado en la base de datos.
@@ -186,7 +186,7 @@ public class CatalogoService {
     }
 
     /**
-     * Actualiza un tipo de evidencia existente en el catálogo (RF-21).
+     * Actualiza un tipo de evidencia existente en el catálogo.
      *
      * @param tipo entidad modificada.
      * @throws SQLException si ocurre un error SQL.
@@ -202,7 +202,7 @@ public class CatalogoService {
     }
 
     /**
-     * Agrega una nueva opción de evaluación a un tipo de evidencia (RF-21).
+     * Agrega una nueva opción de evaluación a un tipo de evidencia.
      *
      * @param opcion entidad {@link Opcion} a registrar.
      * @return identificador generado.
@@ -219,7 +219,7 @@ public class CatalogoService {
     }
 
     /**
-     * Actualiza una opción existente del catálogo (RF-21).
+     * Actualiza una opción existente del catálogo.
      *
      * @param opcion entidad modificada.
      * @throws SQLException si ocurre un error SQL.

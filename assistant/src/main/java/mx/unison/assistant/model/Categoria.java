@@ -1,7 +1,7 @@
 package mx.unison.assistant.model;
 
 /**
- * Representa una categoría normativa del Reglamento PEDPD (Anexo 1) y la categoría "Otros" (RF-01).
+ * Representa una categoría normativa del Reglamento PEDPD (Anexo 1) y la categoría "Otros" (RF-04).
  * Corresponde a la tabla {@code Categoria} en SQLite3.
  */
 public class Categoria {

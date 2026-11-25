@@ -12,7 +12,7 @@ import mx.unison.assistant.model.Evidencia;
 
 /**
  * Servicio de evaluación de reglas de negocio para la Bandeja de Notificaciones
- * y Seguimiento de Pendientes (RF-17, RF-18, RF-19).
+ * y Seguimiento de Pendientes (RF-19, RF-20).
  * Reemplaza {@code SampleData.checkAlerts()}.
  */
 public class AlertaService {
@@ -31,7 +31,7 @@ public class AlertaService {
     }
 
     /**
-     * Inspecciona todas las evidencias en la base de datos bajo las 4 reglas del RF-17,
+     * Inspecciona todas las evidencias en la base de datos bajo las 4 reglas del RF-19,
      * persiste las alertas activas en {@code Alertas} y devuelve los mensajes generados.
      *
      * @return lista de mensajes de alerta activos.
@@ -53,12 +53,12 @@ public class AlertaService {
             boolean hasDocs = docs != null && !docs.isEmpty();
             String estatus = ev.getNombreEstatus() != null ? ev.getNombreEstatus() : "";
 
-            // Regla 1 (RF-17.1): Evidencias sin documentos probatorios adjuntos
+            // Regla 1 (RF-19.1): Evidencias sin documentos probatorios adjuntos
             if (!hasDocs) {
                 sinDocumentosCount++;
             }
 
-            // Regla 2 (RF-17.2): Evidencias del periodo actual aún en Pendiente o En proceso
+            // Regla 2 (RF-19.2): Evidencias del periodo actual aún en Pendiente o En proceso
             if (currentPeriod.equals(ev.getPeriodo())) {
                 if ("Pendiente".equalsIgnoreCase(estatus)) {
                     pendientesPeriodoCount++;
@@ -67,12 +67,12 @@ public class AlertaService {
                 }
             }
 
-            // Regla 3 (RF-17.3): Inconsistencia de cierre (Entregado sin archivo adjunto)
+            // Regla 3 (RF-19.3): Inconsistencia de cierre (Entregado sin archivo adjunto)
             if ("Entregado".equalsIgnoreCase(estatus) && !hasDocs) {
                 entregadosSinDocCount++;
             }
 
-            // Regla 4 (RF-17.4): Advertencia preventiva PEDPD (ningún archivo .pdf o .jpg)
+            // Regla 4 (RF-19.4): Advertencia preventiva PEDPD (ningún archivo .pdf o .jpg)
             if (hasDocs && !hasPdfOrJpg(docs)) {
                 formatoNoPrioritarioCount++;
             }
@@ -99,7 +99,7 @@ public class AlertaService {
     }
 
     /**
-     * Obtiene el detalle completo de alertas activas por evidencia individual (RF-18),
+     * Obtiene el detalle completo de alertas activas por evidencia individual (RF-20),
      * indicando tipo de faltante, tipo de evidencia, periodo y extracto de descripción.
      *
      * @return lista detallada de alertas individuales.

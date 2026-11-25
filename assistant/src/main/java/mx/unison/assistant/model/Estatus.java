@@ -2,7 +2,7 @@ package mx.unison.assistant.model;
 
 /**
  * Catálogo de estados de cumplimiento de una evidencia institucional (tabla {@code Estatus}).
- * Valores esperados según RF-01: "Pendiente", "En proceso" y "Entregado".
+ * Valores esperados según la Tabla 3: "Pendiente", "En proceso" y "Entregado".
  */
 public class Estatus {
 

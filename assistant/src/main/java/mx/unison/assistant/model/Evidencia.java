@@ -5,7 +5,7 @@ import java.util.List;
 
 /**
  * Unidad central del sistema: representa una evidencia institucional registrada
- * por el profesor-investigador (tabla {@code Evidencia}, RF-01).
+ * por el profesor-investigador (tabla {@code Evidencia}, RF-04).
  * Incluye campos auxiliares resueltos mediante JOIN para evitar consultas repetitivas en la UI.
  */
 public class Evidencia {

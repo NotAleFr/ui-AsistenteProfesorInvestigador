@@ -11,7 +11,7 @@ import mx.unison.assistant.model.Evidencia;
 import mx.unison.assistant.model.PlanAcademico;
 
 /**
- * Servicio de lógica de negocio para la gestión de Planes Académicos de Trabajo (RF-06, RF-07).
+ * Servicio de lógica de negocio para la gestión de Planes Académicos de Trabajo (RF-01, RF-02, RF-09).
  * Reemplaza los métodos de planes de {@code SampleData}.
  */
 public class PlanService {

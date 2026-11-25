@@ -1,7 +1,7 @@
 package mx.unison.assistant.model;
 
 /**
- * Representa un aviso o recordatorio generado por el motor de reglas (RF-17, RF-18)
+ * Representa un aviso o recordatorio generado por el motor de reglas (RF-19, RF-20)
  * y almacenado en la tabla {@code Alertas}.
  */
 public class Alerta {
