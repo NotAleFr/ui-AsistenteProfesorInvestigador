@@ -1,16 +1,22 @@
 package mx.unison.assistant.ui.views;
+import mx.unison.assistant.service.AppServices;
 
 import java.awt.*;
+import java.io.IOException;
+import java.sql.SQLException;
+
 import javax.swing.*;
 
 import mx.unison.assistant.ui.common.PageHeader;
 import mx.unison.assistant.ui.common.Ui;
 
 public class AjustesView extends JPanel {
+    final AppServices services;
 
     Runnable onDataChanged;
 
-    public AjustesView() {
+    public AjustesView(AppServices services) {
+        this.services = services;
         setLayout(new BorderLayout());
         Ui.applyViewStyle(this);
 
@@ -83,24 +89,51 @@ public class AjustesView extends JPanel {
 
     public void onRestoreCatalog() {
         if (Ui.confirm(this, "¿Deseas restaurar el catálogo PEDPD a sus valores por defecto?")) {
-            // Conectar: AjustesService.restoreCatalog() (RF-21)
-            Ui.info(this, "Ajustes", "Catálogo restaurado correctamente.");
-            if (onDataChanged != null) {
-                onDataChanged.run();
+            try {
+                services.ajustes.restoreCatalog();
+                Ui.info(this, "Ajustes", "Catálogo restaurado correctamente.");
+                if (onDataChanged != null) {
+                    onDataChanged.run();
+                }
+            } catch (SQLException e) {
+                e.printStackTrace();
+                JOptionPane.showMessageDialog(
+                    this,
+                    "No se pudo restaurar el catálogo.",
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE
+                );
             }
         }
     }
 
     public void onDeleteAll() {
-        // Doble confirmación como pide RF-22
+        // Doble confirmación como pide RF-23
         if (!Ui.confirm(this, "¿Deseas restablecer y eliminar toda la información del sistema?")) {
             return;
         }
         if (Ui.confirm(this, "Esta acción borrará todos los planes, evidencias y archivos adjuntos de forma permanente.\n¿Estás completamente segura de continuar?")) {
-            // Conectar: AjustesService.deleteAll() (RF-22)
-            Ui.info(this, "Ajustes", "Sistema restablecido a estado de fábrica.");
-            if (onDataChanged != null) {
-                onDataChanged.run();
+            try {
+                services.ajustes.deleteAll();
+                Ui.info(this, "Ajustes", "Sistema restablecido a estado de fábrica.");
+                if (onDataChanged != null) {
+                    onDataChanged.run();
+                }
+            } catch (SQLException e) {
+                e.printStackTrace();
+                JOptionPane.showMessageDialog(
+                    this,
+                    "No se pudo restablecer la información del sistema.",
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE
+                );
+            } catch (IOException e) {
+                JOptionPane.showMessageDialog(
+                    this,
+                    e.getMessage(),
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE
+                );
             }
         }
     }

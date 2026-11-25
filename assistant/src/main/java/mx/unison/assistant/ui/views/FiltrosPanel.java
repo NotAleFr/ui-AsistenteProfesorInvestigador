@@ -1,9 +1,13 @@
 package mx.unison.assistant.ui.views;
 
 import java.awt.*;
+import java.sql.SQLException;
 import javax.swing.*;
 
-import mx.unison.assistant.ui.common.SampleData;
+import mx.unison.assistant.model.Estatus;
+import mx.unison.assistant.model.Periodo;
+import mx.unison.assistant.model.TipoEvidencia;
+import mx.unison.assistant.service.AppServices;
 import mx.unison.assistant.ui.common.Ui;
 
 // Panel lateral de filtros de Seguimiento (RF-11)
@@ -11,10 +15,12 @@ public class FiltrosPanel extends JPanel {
 
     static final String ALL = "Todos";
 
-    JComboBox<String> yearCombo = new JComboBox<>(withAll(SampleData.getYears()));
-    JComboBox<String> periodCombo = new JComboBox<>(withAll(SampleData.getAllPeriods()));
-    JComboBox<String> typeCombo = new JComboBox<>(withAll(SampleData.getAllTypes()));
-    JComboBox<String> statusCombo = new JComboBox<>(withAll(SampleData.getStatuses()));
+    final AppServices services;
+
+    JComboBox<String> yearCombo = new JComboBox<>();
+    JComboBox<String> periodCombo = new JComboBox<>();
+    JComboBox<String> typeCombo = new JComboBox<>();
+    JComboBox<String> statusCombo = new JComboBox<>();
     JTextField maxScoreField = new JTextField();
     JComboBox<String> fileCountCombo = new JComboBox<>(new String[] { "Cualquiera", "Con archivos", "Sin archivos" });
     JComboBox<String> fileTypeCombo = new JComboBox<>(new String[] { ALL, ".pdf", ".jpg", ".jpeg", ".png", ".docx", ".xlsx" });
@@ -22,12 +28,37 @@ public class FiltrosPanel extends JPanel {
     Runnable onApplyCallback;
     Runnable onClearCallback;
 
-    public FiltrosPanel(Runnable onApplyCallback, Runnable onClearCallback) {
+    public FiltrosPanel(AppServices services, Runnable onApplyCallback, Runnable onClearCallback) {
+        this.services = services;
         this.onApplyCallback = onApplyCallback;
         this.onClearCallback = onClearCallback;
 
         // Los nombres de tipo son largos. Con un prototipo corto el panel no se ensancha
         typeCombo.setPrototypeDisplayValue("Tipo seleccionado");
+
+        yearCombo.addItem(ALL);
+        for (Integer year : Periodo.recentYears()) {
+            yearCombo.addItem(String.valueOf(year));
+        }
+
+        periodCombo.addItem(ALL);
+        for (String period : Periodo.recentPeriods()) {
+            periodCombo.addItem(period);
+        }
+
+        typeCombo.addItem(ALL);
+        statusCombo.addItem(ALL);
+        try {
+            for (TipoEvidencia t : services.catalogo.getAllTypes()) {
+                typeCombo.addItem(t.getNombreTipoEvidencia());
+            }
+            for (Estatus st : services.catalogo.getStatuses()) {
+                statusCombo.addItem(st.getNombreEstatus());
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "No se pudieron cargar los filtros del catálogo.", "Error", JOptionPane.ERROR_MESSAGE);
+        }
 
         setLayout(new BorderLayout());
         setPreferredSize(new Dimension(230, 0));
@@ -37,16 +68,6 @@ public class FiltrosPanel extends JPanel {
         add(createHeader(), BorderLayout.NORTH);
         add(createBody(), BorderLayout.CENTER);
         add(createFooter(), BorderLayout.SOUTH);
-    }
-
-    // Agrega "Todos" al inicio de la lista
-    private static String[] withAll(String[] items) {
-        String[] result = new String[items.length + 1];
-        result[0] = ALL;
-        for (int i = 0; i < items.length; i++) {
-            result[i + 1] = items[i];
-        }
-        return result;
     }
 
     private JPanel createHeader() {
@@ -129,7 +150,6 @@ public class FiltrosPanel extends JPanel {
     }
 
     // [0]=año, [1]=periodo, [2]=tipo, [3]=estatus, [4]=puntajeMax, [5]=archivos, [6]=tipoArchivo
-    // Conectar: se convierte en model.EvidenceFilter
     public String[] getFilter() {
         return new String[] {
             (String) yearCombo.getSelectedItem(),

@@ -2,39 +2,68 @@ package mx.unison.assistant.ui.dialogs;
 
 import java.awt.*;
 import java.io.File;
+import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
+import mx.unison.assistant.model.*;
+import mx.unison.assistant.service.AppServices;
 import mx.unison.assistant.ui.common.DialogBar;
+import mx.unison.assistant.ui.common.Fechas;
 import mx.unison.assistant.ui.common.InfoBox;
-import mx.unison.assistant.ui.common.SampleData;
 import mx.unison.assistant.ui.common.Ui;
 
 // Seguimiento de una evidencia con los campos de RF-04 y de la Tabla 3 de RF-13
 public class SeguimientoDialog extends JDialog {
 
+    private static final int NONE_OPTION_ID = 0;
+
+    final AppServices services;
+
     JTextField titleField = new JTextField();
-    JComboBox<String> periodCombo = new JComboBox<>(SampleData.getAllPeriods());
-    JComboBox<String> statusCombo = new JComboBox<>(SampleData.getStatuses());
-    JComboBox<String> categoryCombo = new JComboBox<>(SampleData.getCategories());
-    JComboBox<String> accreditationCombo = new JComboBox<>(SampleData.getAccreditations());
-    JComboBox<String> typeCombo = new JComboBox<>();
-    JComboBox<String> optionCombo = new JComboBox<>();
+    JComboBox<String> periodCombo = new JComboBox<>();
+    JComboBox<Estatus> statusCombo = new JComboBox<>();
+    JComboBox<Categoria> categoryCombo = new JComboBox<>();
+    JComboBox<Acreditacion> accreditationCombo = new JComboBox<>();
+    JComboBox<TipoEvidencia> typeCombo = new JComboBox<>();
+    JComboBox<Opcion> optionCombo = new JComboBox<>();
     JTextField startDateField = new JTextField();
     JTextField dueDateField = new JTextField();
 
     JPanel documentsPanel = new JPanel();
     InfoBox infoBox = new InfoBox("Acreditación (PEDPD)");
 
-    List<String> documentNames = new ArrayList<>();
+    Evidencia sourceEvidence;
+    List<Documento> existingDocuments = new ArrayList<>();
     List<File> newFiles = new ArrayList<>();
-    List<String> removedDocuments = new ArrayList<>();
+    List<Documento> removedDocuments = new ArrayList<>();
     boolean saved = false;
+    boolean populating = false;
 
-    public SeguimientoDialog(Window owner) {
+    public SeguimientoDialog(Window owner, AppServices services) {
         super(owner, "Seguimiento de evidencia", ModalityType.APPLICATION_MODAL);
+
+        this.services = services;
+        for (String period : Periodo.recentPeriods()) {
+            periodCombo.addItem(period);
+        }
+        try {
+            for (Estatus st : services.catalogo.getStatuses()) {
+                statusCombo.addItem(st);
+            }
+            for (Categoria cat : services.catalogo.getCategories()) {
+                categoryCombo.addItem(cat);
+            }
+            for (Acreditacion acc : services.catalogo.getAccreditations()) {
+                accreditationCombo.addItem(acc);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "No se pudieron cargar los catálogos.", "Error", JOptionPane.ERROR_MESSAGE);
+        }
 
         setLayout(new BorderLayout());
         setSize(980, 600);
@@ -124,14 +153,22 @@ public class SeguimientoDialog extends JDialog {
 
     private void refreshDocumentsList() {
         documentsPanel.removeAll();
-        if (documentNames.isEmpty()) {
+        int totalItems = existingDocuments.size() + newFiles.size();
+        if (totalItems == 0) {
             JLabel empty = new JLabel("Sin archivos adjuntos");
             empty.setForeground(UIManager.getColor("Text.tertiaryForeground"));
             documentsPanel.add(empty);
         } else {
-            for (int i = 0; i < documentNames.size(); i++) {
-                int index = i;
-                documentsPanel.add(createDocumentPill(documentNames.get(i), index));
+            for (int i = 0; i < existingDocuments.size(); i++) {
+                int idx = i;
+                String name = existingDocuments.get(i).getNombreOriginal();
+                documentsPanel.add(createDocumentPill(name, () -> onRemoveExistingDocument(idx)));
+                documentsPanel.add(Box.createVerticalStrut(8));
+            }
+            for (int i = 0; i < newFiles.size(); i++) {
+                int idx = i;
+                String name = newFiles.get(i).getName();
+                documentsPanel.add(createDocumentPill(name, () -> onRemoveNewFile(idx)));
                 documentsPanel.add(Box.createVerticalStrut(8));
             }
         }
@@ -139,13 +176,13 @@ public class SeguimientoDialog extends JDialog {
         documentsPanel.repaint();
     }
 
-    private JPanel createDocumentPill(String docName, int index) {
+    private JPanel createDocumentPill(String docName, Runnable onRemove) {
         JPanel pill = new JPanel(new BorderLayout(8, 0));
         pill.setBackground(UIManager.getColor("Note.background"));
         pill.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 6));
         pill.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
 
-        JButton removeButton = Ui.button("X", "pillClose", () -> onRemoveDocument(index));
+        JButton removeButton = Ui.button("X", "pillClose", onRemove);
 
         pill.add(new JLabel(docName), BorderLayout.CENTER);
         pill.add(removeButton, BorderLayout.EAST);
@@ -186,30 +223,40 @@ public class SeguimientoDialog extends JDialog {
         chooser.setFileFilter(preferred);
 
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            // Conectar: DocumentoService.attach(...) valida, copia y calcula SHA256 al guardar
             for (File file : chooser.getSelectedFiles()) {
                 newFiles.add(file);
-                documentNames.add(file.getName());
             }
             refreshDocumentsList();
         }
     }
 
-    public void onRemoveDocument(int index) {
-        if (index >= 0 && index < documentNames.size()) {
-            String removed = documentNames.remove(index);
+    private void onRemoveExistingDocument(int index) {
+        if (index >= 0 && index < existingDocuments.size()) {
+            Documento removed = existingDocuments.remove(index);
             removedDocuments.add(removed);
+            refreshDocumentsList();
+        }
+    }
+
+    private void onRemoveNewFile(int index) {
+        if (index >= 0 && index < newFiles.size()) {
+            newFiles.remove(index);
             refreshDocumentsList();
         }
     }
 
     // Recarga los tipos de actividad de la categoría seleccionada
     private void loadTypes() {
-        String category = (String) categoryCombo.getSelectedItem();
+        Categoria category = (Categoria) categoryCombo.getSelectedItem();
         typeCombo.removeAllItems();
         if (category != null) {
-            for (String type : SampleData.getTypes(category)) {
-                typeCombo.addItem(type);
+            try {
+                for (TipoEvidencia type : services.catalogo.getTypes(category.getIdCategoria())) {
+                    typeCombo.addItem(type);
+                }
+            } catch (SQLException e) {
+                e.printStackTrace();
+                JOptionPane.showMessageDialog(this, "No se pudieron cargar los tipos de actividad.", "Error", JOptionPane.ERROR_MESSAGE);
             }
         }
         onTypeChanged();
@@ -217,7 +264,7 @@ public class SeguimientoDialog extends JDialog {
 
     // Recarga las opciones del tipo y el cuadro PEDPD. Si el tipo no tiene opciones, el combo se desactiva
     private void onTypeChanged() {
-        String type = (String) typeCombo.getSelectedItem();
+        TipoEvidencia type = (TipoEvidencia) typeCombo.getSelectedItem();
         optionCombo.removeAllItems();
         if (type == null) {
             optionCombo.setEnabled(false);
@@ -225,75 +272,173 @@ public class SeguimientoDialog extends JDialog {
             return;
         }
 
-        for (String option : SampleData.getOptions(type)) {
-            optionCombo.addItem(option);
+        try {
+            for (Opcion opt : services.catalogo.getOptions(type.getIdTipoEvidencia())) {
+                optionCombo.addItem(opt);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "No se pudieron cargar las opciones del tipo de actividad.", "Error", JOptionPane.ERROR_MESSAGE);
         }
+
         optionCombo.setEnabled(optionCombo.getItemCount() > 0);
-        infoBox.setText(Ui.typeInfoText("", SampleData.getAccreditation(type)));
+        if (!populating && optionCombo.getItemCount() > 0) {
+            optionCombo.setSelectedIndex(0);
+        }
+        infoBox.setText(Ui.typeInfoText("", type.getContenidoAcreditacion()));
     }
 
-    public void fill(
-        String title,
-        String category,
-        String type,
-        String option,
-        String period,
-        String startDate,
-        String dueDate,
-        String status,
-        String accreditation,
-        List<String> docs
-    ) {
-        titleField.setText(title);
-        // Primero la categoría, que recarga los tipos. Luego el tipo, que recarga las opciones. Al final la opción
-        categoryCombo.setSelectedItem(category);
-        typeCombo.setSelectedItem(type);
-        optionCombo.setSelectedItem(option);
-        periodCombo.setSelectedItem(period);
-        startDateField.setText(startDate);
-        dueDateField.setText(dueDate);
-        statusCombo.setSelectedItem(status);
-        accreditationCombo.setSelectedItem(accreditation);
+    public void fill(Evidencia ev) {
+        this.sourceEvidence = ev;
+        populating = true;
+        try {
+            titleField.setText(ev.getTitulo() != null ? ev.getTitulo() : "");
 
-        documentNames.clear();
-        if (docs != null) {
-            documentNames.addAll(docs);
+            String period = ev.getPeriodo();
+            if (period != null && !period.isBlank()) {
+                boolean foundPeriod = false;
+                for (int i = 0; i < periodCombo.getItemCount(); i++) {
+                    if (period.equals(periodCombo.getItemAt(i))) {
+                        periodCombo.setSelectedIndex(i);
+                        foundPeriod = true;
+                        break;
+                    }
+                }
+                if (!foundPeriod) {
+                    periodCombo.addItem(period);
+                    periodCombo.setSelectedItem(period);
+                }
+            }
+
+            for (int i = 0; i < statusCombo.getItemCount(); i++) {
+                if (statusCombo.getItemAt(i).getIdEstatus() == ev.getIdEstatus()) {
+                    statusCombo.setSelectedIndex(i);
+                    break;
+                }
+            }
+
+            // Primero la categoría, que recarga los tipos. Luego el tipo, que recarga las opciones. Al final la opción
+            for (int i = 0; i < categoryCombo.getItemCount(); i++) {
+                if (categoryCombo.getItemAt(i).getIdCategoria() == ev.getIdCategoria()) {
+                    categoryCombo.setSelectedIndex(i);
+                    break;
+                }
+            }
+
+            loadTypes();
+            for (int i = 0; i < typeCombo.getItemCount(); i++) {
+                if (typeCombo.getItemAt(i).getIdTipoEvidencia() == ev.getIdTipoEvidencia()) {
+                    typeCombo.setSelectedIndex(i);
+                    break;
+                }
+            }
+
+            onTypeChanged();
+            if (ev.getIdOpcion() > 0 && optionCombo.getItemCount() > 0) {
+                for (int i = 0; i < optionCombo.getItemCount(); i++) {
+                    if (optionCombo.getItemAt(i).getIdOpcion() == ev.getIdOpcion()) {
+                        optionCombo.setSelectedIndex(i);
+                        break;
+                    }
+                }
+            } else if (optionCombo.getItemCount() > 0) {
+                optionCombo.setSelectedIndex(0);
+            }
+
+            for (int i = 0; i < accreditationCombo.getItemCount(); i++) {
+                if (accreditationCombo.getItemAt(i).getIdAcreditacion() == ev.getIdAcreditacion()) {
+                    accreditationCombo.setSelectedIndex(i);
+                    break;
+                }
+            }
+
+            String startScreen = (ev.getFechaInicio() != null && !ev.getFechaInicio().isBlank())
+                ? Fechas.toScreen(ev.getFechaInicio())
+                : Fechas.toScreen(LocalDate.now());
+            startDateField.setText(startScreen);
+
+            String dueScreen;
+            if (ev.getFechaFinalizacion() != null && !ev.getFechaFinalizacion().isBlank()) {
+                dueScreen = Fechas.toScreen(ev.getFechaFinalizacion());
+            } else {
+                String activePeriod = (String) periodCombo.getSelectedItem();
+                dueScreen = (activePeriod != null && Periodo.isValid(activePeriod))
+                    ? Fechas.toScreen(Periodo.endOf(activePeriod))
+                    : "";
+            }
+            dueDateField.setText(dueScreen);
+
+            existingDocuments.clear();
+            newFiles.clear();
+            removedDocuments.clear();
+            if (ev.getDocumentos() != null) {
+                existingDocuments.addAll(ev.getDocumentos());
+            }
+            refreshDocumentsList();
+        } finally {
+            populating = false;
         }
-        refreshDocumentsList();
     }
 
     public boolean isSaved() {
         return saved;
     }
 
-    // [0]=titulo, [1]=categoria, [2]=tipo, [3]=opcion, [4]=periodo, [5]=fechaInicio, [6]=fechaFin, [7]=estatus, [8]=acreditacion
-    public String[] getEvidence() {
-        String option = (String) optionCombo.getSelectedItem();
-        if (option == null) {
-            option = "";
+    public Evidencia getEvidence() {
+        Evidencia ev = new Evidencia();
+        if (sourceEvidence != null) {
+            ev.setIdEvidencia(sourceEvidence.getIdEvidencia());
+            ev.setDescripcion(sourceEvidence.getDescripcion());
+            ev.setIdPlanAcademico(sourceEvidence.getIdPlanAcademico());
+            ev.setDocumentos(sourceEvidence.getDocumentos());
         }
-        return new String[] {
-            titleField.getText().trim(),
-            (String) categoryCombo.getSelectedItem(),
-            (String) typeCombo.getSelectedItem(),
-            option,
-            (String) periodCombo.getSelectedItem(),
-            startDateField.getText().trim(),
-            dueDateField.getText().trim(),
-            (String) statusCombo.getSelectedItem(),
-            (String) accreditationCombo.getSelectedItem()
-        };
-    }
 
-    public List<String> getDocuments() {
-        return new ArrayList<>(documentNames);
+        ev.setTitulo(titleField.getText().trim());
+        ev.setPeriodo((String) periodCombo.getSelectedItem());
+
+        Estatus selectedStatus = (Estatus) statusCombo.getSelectedItem();
+        if (selectedStatus != null) {
+            ev.setIdEstatus(selectedStatus.getIdEstatus());
+            ev.setNombreEstatus(selectedStatus.getNombreEstatus());
+        }
+
+        Categoria selectedCategory = (Categoria) categoryCombo.getSelectedItem();
+        if (selectedCategory != null) {
+            ev.setIdCategoria(selectedCategory.getIdCategoria());
+            ev.setNombreCategoria(selectedCategory.getNombreCategoria());
+        }
+
+        TipoEvidencia selectedType = (TipoEvidencia) typeCombo.getSelectedItem();
+        if (selectedType != null) {
+            ev.setIdTipoEvidencia(selectedType.getIdTipoEvidencia());
+            ev.setNombreTipoEvidencia(selectedType.getNombreTipoEvidencia());
+        }
+
+        Opcion selectedOption = (Opcion) optionCombo.getSelectedItem();
+        if (optionCombo.isEnabled() && selectedOption != null) {
+            ev.setIdOpcion(selectedOption.getIdOpcion());
+            ev.setNombreOpcion(selectedOption.getNombreOpcion());
+            ev.setPuntajeOpcion(selectedOption.getPuntajeOpcion());
+        } else {
+            ev.setIdOpcion(NONE_OPTION_ID);
+        }
+
+        Acreditacion selectedAcc = (Acreditacion) accreditationCombo.getSelectedItem();
+        if (selectedAcc != null) {
+            ev.setIdAcreditacion(selectedAcc.getIdAcreditacion());
+            ev.setNombreAcreditacion(selectedAcc.getNombreAcreditacion());
+        }
+
+        ev.setFechaInicio(Fechas.toIso(startDateField.getText()));
+        ev.setFechaFinalizacion(Fechas.toIso(dueDateField.getText()));
+        return ev;
     }
 
     public List<File> getNewFiles() {
         return newFiles;
     }
 
-    public List<String> getRemovedDocuments() {
+    public List<Documento> getRemovedDocuments() {
         return removedDocuments;
     }
 }

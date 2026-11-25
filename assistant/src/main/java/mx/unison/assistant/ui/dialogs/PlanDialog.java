@@ -4,6 +4,7 @@ import java.awt.*;
 import java.time.Year;
 import javax.swing.*;
 
+import mx.unison.assistant.model.Periodo;
 import mx.unison.assistant.ui.common.DialogBar;
 import mx.unison.assistant.ui.common.Ui;
 
@@ -53,18 +54,28 @@ public class PlanDialog extends JDialog {
             Ui.info(this, "Aviso", "Escribe un nombre para el plan.");
             return;
         }
+        try {
+            Integer.parseInt(yearField.getText().trim());
+        } catch (NumberFormatException e) {
+            Ui.info(this, "Aviso", "El año debe ser un número válido.");
+            return;
+        }
         accepted = true;
         dispose();
     }
 
     private void updatePeriods() {
-        String year = yearField.getText().trim();
-        if (year.isEmpty()) {
-            year = String.valueOf(Year.now().getValue());
+        String yearText = yearField.getText().trim();
+        int year;
+        try {
+            year = yearText.isEmpty() ? Year.now().getValue() : Integer.parseInt(yearText);
+        } catch (NumberFormatException e) {
+            year = Year.now().getValue();
         }
         periodCombo.removeAllItems();
-        periodCombo.addItem(year + "-1");
-        periodCombo.addItem(year + "-2");
+        for (String p : Periodo.periodsOf(year)) {
+            periodCombo.addItem(p);
+        }
     }
 
     public boolean isAccepted() {

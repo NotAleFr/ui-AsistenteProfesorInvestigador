@@ -1,18 +1,21 @@
 package mx.unison.assistant.ui.views;
+import mx.unison.assistant.service.AppServices;
 
 import java.awt.*;
+import java.sql.SQLException;
 import java.util.List;
 import javax.swing.*;
 
-import mx.unison.assistant.ui.common.SampleData;
 import mx.unison.assistant.ui.common.Ui;
 
 public class AlertasPanel extends JPanel {
+    final AppServices services;
 
     JPanel listPanel = new JPanel();
     Runnable onClose;
 
-    public AlertasPanel(Runnable onClose) {
+    public AlertasPanel(AppServices services, Runnable onClose) {
+        this.services = services;
         this.onClose = onClose;
 
         setLayout(new BorderLayout());
@@ -61,12 +64,19 @@ public class AlertasPanel extends JPanel {
     public void refresh() {
         listPanel.removeAll();
 
-        // Conectar: AlertaService.checkAlerts()
-        List<String> alerts = SampleData.checkAlerts();
-
-        for (String message : alerts) {
-            listPanel.add(createAlertCard(message));
-            listPanel.add(Box.createVerticalStrut(10));
+        try {
+            List<String> alerts = services.alertas.checkAlerts();
+            if (alerts.isEmpty()) {
+                listPanel.add(createAlertCard("No hay alertas"));
+            } else {
+                for (String message : alerts) {
+                    listPanel.add(createAlertCard(message));
+                    listPanel.add(Box.createVerticalStrut(10));
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            listPanel.add(createAlertCard("No se pudieron cargar las alertas."));
         }
 
         listPanel.revalidate();

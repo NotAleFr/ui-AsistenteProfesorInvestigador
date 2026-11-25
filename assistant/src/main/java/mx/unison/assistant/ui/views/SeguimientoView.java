@@ -4,6 +4,8 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
+import java.io.IOException;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import javax.swing.*;
@@ -12,9 +14,13 @@ import javax.swing.event.DocumentListener;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 
+import mx.unison.assistant.model.Documento;
+import mx.unison.assistant.model.Evidencia;
+import mx.unison.assistant.model.Periodo;
+import mx.unison.assistant.service.AppServices;
+import mx.unison.assistant.service.EvidenciaService.ResumenIndicadores;
+import mx.unison.assistant.ui.common.Fechas;
 import mx.unison.assistant.ui.common.PageHeader;
-import mx.unison.assistant.ui.common.SampleData;
-import mx.unison.assistant.ui.common.SampleData.TrackingRow;
 import mx.unison.assistant.ui.common.StatsBar;
 import mx.unison.assistant.ui.common.StatusBadge;
 import mx.unison.assistant.ui.common.Ui;
@@ -22,20 +28,25 @@ import mx.unison.assistant.ui.dialogs.SeguimientoDialog;
 
 public class SeguimientoView extends JPanel {
 
+    final AppServices services;
+
     JTextField searchField = new JTextField();
-    JComboBox<String> yearCombo = new JComboBox<>(SampleData.getYears());
+    JComboBox<String> yearCombo = new JComboBox<>();
     StatsBar statsBar = new StatsBar();
     JPanel tabsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 16, 4));
 
     DefaultTableModel tableModel;
     JTable table;
     FiltrosPanel filtrosPanel;
-    List<TrackingRow> allRows = new ArrayList<>();
-    List<TrackingRow> visibleRows = new ArrayList<>();
+    List<Evidencia> allRows = new ArrayList<>();
+    List<Evidencia> visibleRows = new ArrayList<>();
     String selectedSemester = "Todos";
     Runnable onDataChanged;
 
-    public SeguimientoView() {
+    public SeguimientoView(AppServices services) {
+        this.services = services;
+        loadYears();
+
         setLayout(new BorderLayout());
         setBackground(Color.WHITE);
 
@@ -60,7 +71,7 @@ public class SeguimientoView extends JPanel {
         mainArea.add(north, BorderLayout.NORTH);
         mainArea.add(createTableScroll(), BorderLayout.CENTER);
 
-        filtrosPanel = new FiltrosPanel(() -> applyFilter(), () -> applyFilter());
+        filtrosPanel = new FiltrosPanel(services, () -> applyFilter(), () -> applyFilter());
         filtrosPanel.setVisible(false);
 
         add(mainArea, BorderLayout.CENTER);
@@ -71,8 +82,20 @@ public class SeguimientoView extends JPanel {
         applyFilter();
     }
 
+    private void loadYears() {
+        yearCombo.removeAllItems();
+        for (Integer year : Periodo.recentYears()) {
+            yearCombo.addItem(String.valueOf(year));
+        }
+    }
+
     public void setOnDataChanged(Runnable onDataChanged) {
         this.onDataChanged = onDataChanged;
+    }
+
+    public void reload() {
+        loadRows();
+        applyFilter();
     }
 
     private JPanel createToolbar() {
@@ -233,34 +256,39 @@ public class SeguimientoView extends JPanel {
         return cell;
     }
 
-    // Carga las evidencias activas. Conectar: EvidenciaService.findForTracking()
     private void loadRows() {
-        allRows = SampleData.findForTracking();
+        try {
+            allRows = services.evidencias.findForTracking();
+        } catch (SQLException e) {
+            e.printStackTrace();
+            allRows = new ArrayList<>();
+            JOptionPane.showMessageDialog(this, "No se pudieron cargar las evidencias en seguimiento.", "Error", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
-    public void loadTable(List<TrackingRow> rows) {
+    public void loadTable(List<Evidencia> rows) {
         visibleRows = rows;
         tableModel.setRowCount(0);
 
-        int delivered = 0;
-        int pending = 0;
-        int inProgress = 0;
+        for (Evidencia item : rows) {
+            String category = item.getNombreCategoria() != null ? item.getNombreCategoria() : "";
+            String type = item.getNombreTipoEvidencia() != null ? item.getNombreTipoEvidencia() : "";
+            String period = item.getPeriodo() != null ? item.getPeriodo() : "";
+            String dueDate = (item.getFechaFinalizacion() != null && !item.getFechaFinalizacion().isBlank())
+                ? Fechas.toScreen(item.getFechaFinalizacion())
+                : (Periodo.isValid(period) ? Fechas.toScreen(Periodo.endOf(period)) : "");
+            double score = item.getPuntajeOpcion();
+            String status = item.getNombreEstatus() != null ? item.getNombreEstatus() : "";
+            int docCount = item.getDocumentos() != null ? item.getDocumentos().size() : 0;
 
-        for (TrackingRow item : rows) {
             tableModel.addRow(new Object[] {
-                item.title, item.category, item.type, item.period,
-                item.dueDate, item.score, item.status, item.docs.size(), "Dar seguimiento"
+                item.getTitulo(), category, type, period,
+                dueDate, score, status, docCount, "Dar seguimiento"
             });
-
-            if ("Entregado".equalsIgnoreCase(item.status)) {
-                delivered++;
-            } else if ("Pendiente".equalsIgnoreCase(item.status)) {
-                pending++;
-            } else {
-                inProgress++;
-            }
         }
-        statsBar.setCounts(rows.size(), delivered, pending, inProgress);
+
+        ResumenIndicadores resumen = services.evidencias.countByStatus(rows);
+        statsBar.setCounts(resumen.total(), resumen.entregadas(), resumen.pendientes(), resumen.enProceso());
     }
 
     public void onSearch() {
@@ -279,47 +307,53 @@ public class SeguimientoView extends JPanel {
         String fileCountFilter = side[5];
         String fileTypeFilter = side[6];
 
-        Integer maxScore = null;
+        Double maxScore = null;
         if (!maxScoreText.isEmpty()) {
             try {
-                maxScore = Integer.parseInt(maxScoreText);
+                maxScore = Double.parseDouble(maxScoreText);
             } catch (NumberFormatException ignored) {
                 maxScore = null;
             }
         }
 
-        List<TrackingRow> filtered = new ArrayList<>();
-        for (TrackingRow item : allRows) {
-            if (!query.isEmpty() && !item.title.toLowerCase().contains(query)) {
+        List<Evidencia> filtered = new ArrayList<>();
+        for (Evidencia item : allRows) {
+            String title = item.getTitulo() != null ? item.getTitulo() : "";
+            String period = item.getPeriodo() != null ? item.getPeriodo() : "";
+            String type = item.getNombreTipoEvidencia() != null ? item.getNombreTipoEvidencia() : "";
+            String status = item.getNombreEstatus() != null ? item.getNombreEstatus() : "";
+            List<Documento> docs = item.getDocumentos() != null ? item.getDocumentos() : List.of();
+
+            if (!query.isEmpty() && !title.toLowerCase().contains(query)) {
                 continue;
             }
 
             String activeYear = !"Todos".equals(sideYear) ? sideYear : toolbarYear;
-            if (!item.period.startsWith(activeYear)) {
+            if (!period.startsWith(activeYear)) {
                 continue;
             }
-            if (!"Todos".equals(selectedSemester) && !selectedSemester.endsWith(item.period)) {
+            if (!"Todos".equals(selectedSemester) && !selectedSemester.endsWith(period)) {
                 continue;
             }
-            if (!"Todos".equals(sidePeriod) && !item.period.equals(sidePeriod)) {
+            if (!"Todos".equals(sidePeriod) && !period.equals(sidePeriod)) {
                 continue;
             }
-            if (!"Todos".equals(sideType) && !item.type.equals(sideType)) {
+            if (!"Todos".equals(sideType) && !type.equals(sideType)) {
                 continue;
             }
-            if (!"Todos".equals(sideStatus) && !item.status.equalsIgnoreCase(sideStatus)) {
+            if (!"Todos".equals(sideStatus) && !status.equalsIgnoreCase(sideStatus)) {
                 continue;
             }
-            if (maxScore != null && item.score > maxScore) {
+            if (maxScore != null && item.getPuntajeOpcion() > maxScore) {
                 continue;
             }
-            if ("Con archivos".equals(fileCountFilter) && item.docs.isEmpty()) {
+            if ("Con archivos".equals(fileCountFilter) && docs.isEmpty()) {
                 continue;
             }
-            if ("Sin archivos".equals(fileCountFilter) && !item.docs.isEmpty()) {
+            if ("Sin archivos".equals(fileCountFilter) && !docs.isEmpty()) {
                 continue;
             }
-            if (!"Todos".equals(fileTypeFilter) && !hasFileWithExtension(item.docs, fileTypeFilter)) {
+            if (!"Todos".equals(fileTypeFilter) && !hasFileWithExtension(docs, fileTypeFilter)) {
                 continue;
             }
 
@@ -328,9 +362,10 @@ public class SeguimientoView extends JPanel {
         loadTable(filtered);
     }
 
-    private boolean hasFileWithExtension(List<String> docs, String extension) {
-        for (String doc : docs) {
-            if (doc.toLowerCase().endsWith(extension.toLowerCase())) {
+    private boolean hasFileWithExtension(List<Documento> docs, String extension) {
+        for (Documento doc : docs) {
+            String name = doc.getNombreOriginal();
+            if (name != null && name.toLowerCase().endsWith(extension.toLowerCase())) {
                 return true;
             }
         }
@@ -348,32 +383,27 @@ public class SeguimientoView extends JPanel {
             return;
         }
 
-        TrackingRow item = visibleRows.get(row);
-        SeguimientoDialog dialog = new SeguimientoDialog(SwingUtilities.getWindowAncestor(this));
-        dialog.fill(
-            item.title, item.category, item.type, item.option, item.period,
-            item.startDate, item.dueDate, item.status, item.accreditation,
-            item.docs
-        );
+        Evidencia item = visibleRows.get(row);
+        SeguimientoDialog dialog = new SeguimientoDialog(SwingUtilities.getWindowAncestor(this), services);
+        dialog.fill(item);
         dialog.setVisible(true);
 
         if (dialog.isSaved()) {
-            // Conectar: EvidenciaService.updateTracking(...), DocumentoService.attach(...) y DocumentoService.remove(...)
-            String[] updated = dialog.getEvidence();
-            item.title = updated[0];
-            item.category = updated[1];
-            item.type = updated[2];
-            item.option = updated[3];
-            item.period = updated[4];
-            item.startDate = updated[5];
-            item.dueDate = updated[6];
-            item.status = updated[7];
-            item.accreditation = updated[8];
-            item.docs = dialog.getDocuments();
-
-            applyFilter();
-            if (onDataChanged != null) {
-                onDataChanged.run();
+            try {
+                Evidencia updated = dialog.getEvidence();
+                services.evidencias.updateTracking(updated, dialog.getNewFiles(), dialog.getRemovedDocuments());
+                loadRows();
+                applyFilter();
+                if (onDataChanged != null) {
+                    onDataChanged.run();
+                }
+            } catch (IllegalArgumentException e) {
+                JOptionPane.showMessageDialog(this, e.getMessage(), "Aviso", JOptionPane.WARNING_MESSAGE);
+            } catch (IOException e) {
+                JOptionPane.showMessageDialog(this, e.getMessage(), "Error de archivo", JOptionPane.ERROR_MESSAGE);
+            } catch (SQLException e) {
+                e.printStackTrace();
+                JOptionPane.showMessageDialog(this, "No se pudo guardar el seguimiento.", "Error", JOptionPane.ERROR_MESSAGE);
             }
         }
     }

@@ -9,7 +9,7 @@ import mx.unison.assistant.service.AppServices;
 import mx.unison.assistant.ui.views.*;
 
 public class MainWindow {
-
+    
     JFrame frame;
     Sidebar sidebar;
     CardLayout cards = new CardLayout();
@@ -19,14 +19,15 @@ public class MainWindow {
     final AppServices services;
 
     public MainWindow(AppServices services) {
+        
         this.services = services;
         frame = new JFrame("Asistente Profesor-Investigador");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-        PlanAcademicoView planView = new PlanAcademicoView();
-        SeguimientoView seguimientoView = new SeguimientoView();
+        PlanAcademicoView planView = new PlanAcademicoView(services);
+        SeguimientoView seguimientoView = new SeguimientoView(services);
         ReportesView reportesView = new ReportesView();
-        AjustesView ajustesView = new AjustesView();
+        AjustesView ajustesView = new AjustesView(services);
 
         content.add(planView, Section.ACADEMIC_PLAN.name());
         content.add(seguimientoView, Section.TRACKING.name());
@@ -34,12 +35,21 @@ public class MainWindow {
         content.add(ajustesView, Section.SETTINGS.name());
 
         sidebar = new Sidebar(section -> showSection(section), () -> toggleAlerts());
-        alertasPanel = new AlertasPanel(() -> toggleAlerts());
+        alertasPanel = new AlertasPanel(services, () -> toggleAlerts());
         alertasPanel.setVisible(false);
 
-        planView.setOnDataChanged(() -> alertasPanel.refresh());
-        seguimientoView.setOnDataChanged(() -> alertasPanel.refresh());
-        ajustesView.setOnDataChanged(() -> alertasPanel.refresh());
+        planView.setOnDataChanged(() -> {
+            seguimientoView.reload();
+            alertasPanel.refresh();
+        });
+        seguimientoView.setOnDataChanged(() -> {
+            alertasPanel.refresh();
+        });
+        ajustesView.setOnDataChanged(() -> {
+            planView.reload();
+            seguimientoView.reload();
+            alertasPanel.refresh();
+        });
 
         // Usamos JLayeredPane para que la bandeja de alertas flote encima de la pantalla actual
         centerLayers.add(content, JLayeredPane.DEFAULT_LAYER);
