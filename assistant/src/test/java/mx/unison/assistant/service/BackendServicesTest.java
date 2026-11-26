@@ -5,7 +5,12 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -20,10 +25,14 @@ import mx.unison.assistant.model.Documento;
 import mx.unison.assistant.model.Estatus;
 import mx.unison.assistant.model.Evidencia;
 import mx.unison.assistant.model.Opcion;
+import mx.unison.assistant.model.Periodo;
 import mx.unison.assistant.model.PlanAcademico;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.sqlite.SQLiteErrorCode;
+import org.sqlite.SQLiteException;
 
 /**
  * Pruebas de integración sobre una base de datos SQLite temporal: catálogos PEDPD,
@@ -44,12 +53,13 @@ class BackendServicesTest {
     private EvidenciaService evidenciaService;
     private AlertaService alertaService;
     private AjustesService ajustesService;
+    private DocumentoService documentoService;
 
     @BeforeEach
     void setUp() {
         DatabaseConnection.setDbFilePath(tempDir.resolve("test_asistente.db").toString());
 
-        DocumentoService documentoService = new DocumentoService(
+        documentoService = new DocumentoService(
                 new DocumentoDAO(), tempDir.resolve("archivos_adjuntos").toString());
         EvidenciaDAO evidenciaDAO = new EvidenciaDAO();
         alertaService = new AlertaService(evidenciaDAO, new AlertaDAO());
@@ -57,6 +67,11 @@ class BackendServicesTest {
         ajustesService = new AjustesService(documentoService);
         planService = new PlanService(new PlanAcademicoDAO(), evidenciaDAO, documentoService, alertaService);
         evidenciaService = new EvidenciaService(evidenciaDAO, documentoService, alertaService);
+    }
+
+    @AfterEach
+    void tearDown() {
+        DatabaseConnection.setDbFilePath(null);
     }
 
     @Test
@@ -130,6 +145,8 @@ class BackendServicesTest {
         assertEquals("constancia_oficial.pdf", doc.getNombreOriginal());
         assertEquals(64, doc.getSha256().length());
         assertTrue(doc.getRutaAlmacenamiento().contains("productividad_docente"));
+        assertTrue(doc.getRutaAlmacenamiento().startsWith("archivos_adjuntos/"));
+        assertFalse(Path.of(doc.getRutaAlmacenamiento()).isAbsolute());
 
         // RF-12
         EvidenciaService.ResumenIndicadores resumen = evidenciaService.countByStatus(evidenciaService.findForTracking());
@@ -137,7 +154,8 @@ class BackendServicesTest {
         assertEquals(100.0, resumen.porcentajeAvance(), 0.01);
 
         // RF-06: se borran el registro y su archivo
-        Path archivo = Path.of(doc.getRutaAlmacenamiento());
+        Path archivo = documentoService.resolveFile(doc);
+        assertTrue(Files.exists(archivo));
         planService.deleteRecord(registro.getIdEvidencia());
         assertTrue(evidenciaService.findById(registro.getIdEvidencia()).isEmpty());
         assertFalse(Files.exists(archivo));
@@ -175,11 +193,13 @@ class BackendServicesTest {
         Evidencia registro = registroEnSeguimiento();
         evidenciaService.updateTracking(registro, List.of(crearPdf("acta.pdf")), null);
         Documento doc = evidenciaService.findById(registro.getIdEvidencia()).get().getDocumentos().get(0);
+        Path archivo = documentoService.resolveFile(doc);
+        assertTrue(Files.exists(archivo));
 
         evidenciaService.updateTracking(registro, null, List.of(doc));
 
         assertTrue(evidenciaService.findById(registro.getIdEvidencia()).get().getDocumentos().isEmpty());
-        assertFalse(Files.exists(Path.of(doc.getRutaAlmacenamiento())));
+        assertFalse(Files.exists(archivo));
     }
 
     @Test
@@ -211,8 +231,9 @@ class BackendServicesTest {
     void testEliminarPlanConEvidenciasYAdjuntos() throws Exception {
         Evidencia registro = registroEnSeguimiento();
         evidenciaService.updateTracking(registro, List.of(crearPdf("acta.pdf")), null);
-        Path archivo = Path.of(evidenciaService.findById(registro.getIdEvidencia()).get()
-                .getDocumentos().get(0).getRutaAlmacenamiento());
+        Path archivo = documentoService.resolveFile(evidenciaService.findById(registro.getIdEvidencia()).get()
+                .getDocumentos().get(0));
+        assertTrue(Files.exists(archivo));
 
         planService.deletePlan(registro.getIdPlanAcademico()); // RF-09
 
@@ -276,6 +297,153 @@ class BackendServicesTest {
         assertTrue(evidenciaService.findForTracking().isEmpty());
         assertFalse(Files.exists(tempDir.resolve("archivos_adjuntos")));
         assertEquals(5, catalogoService.getCategories().size());
+    }
+
+    @Test
+    void testRespaldoIncluyeCambiosConfirmadosEnWalYConservaTresCopias() throws Exception {
+        Path primeraCopia;
+        try (Connection conexionAbierta = DatabaseConnection.getConnection()) {
+            registroEnSeguimiento();
+            registroEnSeguimiento();
+            assertEquals(2, contarEvidencias(conexionAbierta));
+            assertTrue(Files.size(Path.of(DatabaseConnection.getDbFilePath() + "-wal")) > 0);
+
+            primeraCopia = DatabaseConnection.createBackup();
+            assertEquals(tempDir.resolve("backups"), primeraCopia.getParent());
+            try (Connection conexionRespaldo = DriverManager.getConnection("jdbc:sqlite:" + primeraCopia)) {
+                assertEquals(2, contarEvidencias(conexionRespaldo));
+            }
+        }
+        Path segundaCopia = DatabaseConnection.createBackup();
+        Path terceraCopia = DatabaseConnection.createBackup();
+        Path cuartaCopia = DatabaseConnection.createBackup();
+
+        assertEquals(List.of(cuartaCopia, terceraCopia, segundaCopia), DatabaseConnection.listBackups());
+        assertFalse(Files.exists(primeraCopia));
+    }
+
+    @Test
+    void testRestaurarIgnoraRespaldoDanadoYResguardaArchivosAnteriores() throws Exception {
+        registroEnSeguimiento();
+        Path respaldoValido = DatabaseConnection.createBackup();
+        Path respaldoDanado = respaldoValido.resolveSibling("base_datos-99991231_235959_999.bak");
+        Files.writeString(respaldoDanado, "Esto no es una base SQLite");
+        registroEnSeguimiento();
+        assertEquals(2, evidenciaService.findForTracking().size());
+
+        Path archivoWal = Path.of(DatabaseConnection.getDbFilePath() + "-wal");
+        Path archivoShm = Path.of(DatabaseConnection.getDbFilePath() + "-shm");
+        Files.writeString(archivoWal, "WAL anterior");
+        Files.writeString(archivoShm, "SHM anterior");
+
+        assertEquals(respaldoDanado, DatabaseConnection.listBackups().getFirst());
+        assertTrue(DatabaseConnection.restoreLatestBackup());
+        assertFalse(Files.exists(archivoWal));
+        assertFalse(Files.exists(archivoShm));
+        assertEquals(DatabaseConnection.HealthStatus.OK, DatabaseConnection.checkHealth().status());
+        assertEquals(1, evidenciaService.findForTracking().size());
+    }
+
+    @Test
+    void testBaseQueNoEsSqliteSeClasificaComoDanada() throws Exception {
+        Files.writeString(Path.of(DatabaseConnection.getDbFilePath()), "Esto no es una base SQLite");
+
+        DatabaseConnection.HealthResult resultadoSalud = DatabaseConnection.checkHealth();
+
+        assertEquals(DatabaseConnection.HealthStatus.CORRUPT, resultadoSalud.status());
+        SQLiteException errorSqlite = assertInstanceOf(SQLiteException.class, resultadoSalud.cause());
+        assertEquals(SQLiteErrorCode.SQLITE_NOTADB, errorSqlite.getResultCode());
+    }
+
+    @Test
+    void testBaseCreaCarpetasParaUnaRutaPersonalizada() {
+        Path rutaBaseDatos = tempDir.resolve("datos/subcarpeta/base.db");
+        DatabaseConnection.setDbFilePath(rutaBaseDatos.toString());
+
+        assertEquals(DatabaseConnection.HealthStatus.OK, DatabaseConnection.checkHealth().status());
+        assertTrue(Files.isRegularFile(rutaBaseDatos));
+    }
+
+    @Test
+    void testResuelveAdjuntosConRutasRelativasYAbsolutas() {
+        Path rutaEsperada = tempDir.resolve("archivos_adjuntos/productividad_docente/acta.pdf");
+        Documento adjunto = new Documento();
+        for (String rutaGuardada : List.of("archivos_adjuntos/productividad_docente/acta.pdf",
+                "productividad_docente/acta.pdf", rutaEsperada.toString())) {
+            adjunto.setRutaAlmacenamiento(rutaGuardada);
+            assertEquals(rutaEsperada, documentoService.resolveFile(adjunto));
+        }
+    }
+
+    @Test
+    void testRecordatorioDeInicioCuentaPendientesDelPeriodoAnteriorDesdeAgosto() throws Exception {
+        agregarEvidencia("2026-1", true, 1, null);
+        agregarEvidencia("2026-1", true, 1, null);
+        agregarEvidencia("2026-1", true, ESTATUS_ENTREGADO, null);
+        agregarEvidencia("2025-2", true, 1, null);
+
+        assertTrue(alertaService.getStartupReminders(LocalDate.of(2026, 7, 15)).isEmpty());
+        assertEquals(List.of("Hay 2 evidencia(s) pendiente(s) del periodo anterior (2026-1)."),
+                alertaService.getStartupReminders(LocalDate.of(2026, 8, 1)));
+    }
+
+    @Test
+    void testRecordatorioDeMitadDePeriodo() throws Exception {
+        assertEquals(List.of("A mitad del periodo, sube las evidencias de tus actividades recientes."),
+                alertaService.getStartupReminders(LocalDate.of(2026, 10, 1)));
+    }
+
+    @Test
+    void testRecordatorioDeCierreDePeriodo() throws Exception {
+        assertEquals(List.of("Entrega las evidencias de las actividades que finalizan en este periodo."),
+                alertaService.getStartupReminders(LocalDate.of(2026, 11, 25)));
+    }
+
+    @Test
+    void testRecordatorioDeVencimientoCuentaSoloPendientesDeHoyYManana() throws Exception {
+        agregarEvidencia("2026-1", true, 1, "2026-04-15");
+        agregarEvidencia("2026-1", true, 1, "2026-04-16");
+        agregarEvidencia("2026-1", true, 1, "2026-04-14");
+        agregarEvidencia("2026-1", true, 1, "2026-04-17");
+        agregarEvidencia("2026-1", true, ESTATUS_ENTREGADO, "2026-04-15");
+        AlertaDAO alertaDAO = new AlertaDAO();
+        alertaDAO.replaceAll(List.of("Alerta guardada"));
+
+        assertEquals(List.of("Hay 2 evidencia(s) pendiente(s) con fecha límite hoy o mañana."),
+                alertaService.getStartupReminders(LocalDate.of(2026, 4, 15)));
+        assertEquals("Alerta guardada", alertaDAO.findAll().getFirst().getContenidoAlerta());
+    }
+
+    @Test
+    void testRecordatoriosIgnoranBorradoresYFechasFaltantes() throws Exception {
+        agregarEvidencia("2026-1", false, 1, "2026-08-01");
+        agregarEvidencia("2026-2", true, 1, null);
+        agregarEvidencia("2026-2", true, 1, " ");
+
+        assertTrue(alertaService.getStartupReminders(LocalDate.of(2026, 8, 1)).isEmpty());
+        assertTrue(alertaService.getStartupReminders(LocalDate.of(2026, 7, 15)).isEmpty());
+    }
+
+    private void agregarEvidencia(String periodo, boolean activo, int estatus, String fechaFinalizacion)
+            throws SQLException {
+        PlanAcademico plan = planService.createPlan("Plan " + periodo,
+                Periodo.yearOf(periodo), periodo);
+        Evidencia evidencia = nuevoRegistro(plan);
+        evidencia.setAnio(plan.getAnioPlan());
+        evidencia.setIdEstatus(estatus);
+        evidencia.setFechaFinalizacion(fechaFinalizacion);
+        new EvidenciaDAO().insert(evidencia);
+        if (activo) {
+            planService.activatePlan(plan.getIdPlanAcademico());
+        }
+    }
+
+    private int contarEvidencias(Connection conn) throws SQLException {
+        try (Statement stmt = conn.createStatement();
+             ResultSet resultado = stmt.executeQuery("SELECT COUNT(*) FROM Evidencia")) {
+            assertTrue(resultado.next());
+            return resultado.getInt(1);
+        }
     }
 
     private Evidencia registroEnSeguimiento() throws Exception {
