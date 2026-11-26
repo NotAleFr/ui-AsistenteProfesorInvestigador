@@ -64,6 +64,13 @@
       <version>3.0.6</version>
     </dependency>
 
+    <dependency>
+      <groupId>com.github.librepdf</groupId>
+      <artifactId>openpdf-html</artifactId>
+      <version>3.0.6</version>
+    </dependency>
+
+
   </dependencies>
 
   <build>
