@@ -14,15 +14,16 @@ public class AppServices {
     public final DocumentoService documentos;
     public final AlertaService alertas;
     public final AjustesService ajustes;
+    public final ReporteService reportes;
 
     public AppServices() {
         EvidenciaDAO evidenciaDAO = new EvidenciaDAO();
         documentos = new DocumentoService();
         alertas = new AlertaService(evidenciaDAO, new AlertaDAO());
-
         catalogo = new CatalogoService(new CatalogoDAO());
         planes = new PlanService(new PlanAcademicoDAO(), evidenciaDAO, documentos, alertas);
         evidencias = new EvidenciaService(evidenciaDAO, documentos, alertas);
         ajustes = new AjustesService(documentos);
+        reportes = new ReporteService(evidencias, planes);
     }
 }
