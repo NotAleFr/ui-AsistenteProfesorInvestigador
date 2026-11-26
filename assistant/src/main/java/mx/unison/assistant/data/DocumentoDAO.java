@@ -23,12 +23,17 @@ public class DocumentoDAO {
      * @throws SQLException si ocurre un error SQL.
      */
     public List<Documento> findByEvidencia(int idEvidencia) throws SQLException {
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            return findByEvidencia(conn, idEvidencia);
+        }
+    }
+
+    List<Documento> findByEvidencia(Connection conn, int idEvidencia) throws SQLException {
         String sql = "SELECT IdDocumento, RutaAlmacenamiento, NombreOriginal, TamanoBytes, "
                    + "SHA256, FechaSubida, IdEvidencia "
                    + "FROM Documento WHERE IdEvidencia = ? ORDER BY IdDocumento ASC";
         List<Documento> list = new ArrayList<>();
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, idEvidencia);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {

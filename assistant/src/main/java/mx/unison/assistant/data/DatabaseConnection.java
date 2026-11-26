@@ -1,18 +1,33 @@
 package mx.unison.assistant.data;
 
 import java.io.BufferedReader;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.DirectoryStream;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.Files;
+import java.nio.file.NotDirectoryException;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.stream.Collectors;
+import org.sqlite.SQLiteConfig;
+import org.sqlite.SQLiteErrorCode;
+import org.sqlite.SQLiteException;
 
 /**
  * Administra la conexión JDBC local hacia la base de datos SQLite3 (IS-1.1, IS-1.2).
@@ -21,11 +36,13 @@ import java.util.stream.Collectors;
  */
 public class DatabaseConnection {
 
-    private static final String DEFAULT_DB_PATH = "base_datos.db";
+    private static final int BUSY_TIMEOUT_MS = 5000;
+    private static final int MAX_BACKUPS = 3;
+    private static final DateTimeFormatter BACKUP_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS");
     // mvn exec:java pone esta propiedad (ver pom.xml) para que la BD nueva traiga db_demo.sql
     public static final String DEMO_PROPERTY = "asistente.demo";
-    private static String dbFilePath = DEFAULT_DB_PATH;
-    private static boolean initialized = false;
+    private static String dbFilePath;
+    private static Path initializedPath;
 
     private DatabaseConnection() {
     }
@@ -37,7 +54,7 @@ public class DatabaseConnection {
      */
     public static synchronized void setDbFilePath(String path) {
         dbFilePath = path;
-        initialized = false;
+        initializedPath = null;
     }
 
     /**
@@ -45,8 +62,8 @@ public class DatabaseConnection {
      *
      * @return ruta del archivo de base de datos.
      */
-    public static String getDbFilePath() {
-        return dbFilePath;
+    public static synchronized String getDbFilePath() {
+        return dbFilePath == null ? AppPaths.getDatabasePath().toString() : dbFilePath;
     }
 
     /**
@@ -57,42 +74,45 @@ public class DatabaseConnection {
      * @throws SQLException si ocurre un error al conectar o inicializar la base de datos.
      */
     public static synchronized Connection getConnection() throws SQLException {
-        if (!initialized) {
-            initializeDatabaseIfNeeded();
-            initialized = true;
+        Path path = Path.of(getDbFilePath());
+        Path parent = path.getParent();
+        if (parent != null) {
+            try {
+                Files.createDirectories(parent);
+            } catch (IOException e) {
+                throw new SQLException("No se pudo crear la carpeta de la base de datos.", e);
+            }
         }
-        Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbFilePath);
-        try (Statement stmt = conn.createStatement()) {
-            stmt.execute("PRAGMA foreign_keys = ON;");
-        } catch (SQLException e) {
-            conn.close();
-            throw e;
+        if (!path.equals(initializedPath)) {
+            initializeDatabaseIfNeeded(path);
+            initializedPath = path;
         }
-        return conn;
+        return openConnection(path);
+    }
+
+    private static Connection openConnection(Path path) throws SQLException {
+        SQLiteConfig config = new SQLiteConfig();
+        config.setJournalMode(SQLiteConfig.JournalMode.WAL);
+        config.setBusyTimeout(BUSY_TIMEOUT_MS);
+        config.setSynchronous(SQLiteConfig.SynchronousMode.NORMAL);
+        config.enforceForeignKeys(true);
+        return DriverManager.getConnection("jdbc:sqlite:" + path, config.toProperties());
     }
 
     /**
      * Verifica si la tabla {@code Categoria} existe; de lo contrario,
      * ejecuta {@code db/db_schema.sql} y {@code db/db_data.sql} desde los recursos del proyecto.
      */
-    private static void initializeDatabaseIfNeeded() throws SQLException {
-        File dbFile = new File(dbFilePath);
-        boolean needsSchema = !dbFile.exists() || dbFile.length() == 0;
-
-        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbFilePath)) {
-            if (!needsSchema) {
-                try (Statement stmt = conn.createStatement();
-                     ResultSet rs = stmt.executeQuery(
-                             "SELECT name FROM sqlite_master WHERE type='table' AND name='Categoria'")) {
-                    needsSchema = !rs.next();
-                }
+    private static void initializeDatabaseIfNeeded(Path path) throws SQLException {
+        try (Connection conn = openConnection(path)) {
+            boolean needsSchema;
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(
+                         "SELECT name FROM sqlite_master WHERE type='table' AND name='Categoria'")) {
+                needsSchema = !rs.next();
             }
 
             if (needsSchema) {
-                // Antes de la transacción, porque SQLite ignora este PRAGMA dentro de una
-                try (Statement stmt = conn.createStatement()) {
-                    stmt.execute("PRAGMA foreign_keys = ON;");
-                }
                 // En una transacción: si algo falla, no queda una BD a medias que ya no se vuelva a crear
                 conn.setAutoCommit(false);
                 try {
@@ -108,6 +128,186 @@ public class DatabaseConnection {
                 }
             }
         }
+    }
+
+    public enum HealthStatus {
+        OK("La base de datos está en buen estado."),
+        LOCKED("La base de datos está ocupada. Cierra otras instancias del asistente y vuelve a intentar."),
+        PERMISSION_DENIED("No se pudo abrir la base de datos. Comprueba que la carpeta de datos sea accesible "
+                + "y que tengas permisos de lectura y escritura."),
+        DISK_FULL("No hay espacio suficiente en el disco. Libera espacio y vuelve a intentar."),
+        CORRUPT("La base de datos está dañada. Restaura un respaldo si está disponible."),
+        OTHER("No se pudo comprobar la base de datos. Revisa que la carpeta de datos esté disponible "
+                + "y vuelve a intentar.");
+
+        private final String message;
+
+        HealthStatus(String message) {
+            this.message = message;
+        }
+    }
+
+    public record HealthResult(HealthStatus status, String message, Throwable cause) {
+    }
+
+    public static HealthResult checkHealth() {
+        try (Connection conn = getConnection()) {
+            HealthStatus status = passesQuickCheck(conn) ? HealthStatus.OK : HealthStatus.CORRUPT;
+            return new HealthResult(status, status.message, null);
+        } catch (SQLException | RuntimeException e) {
+            HealthStatus status = classifyHealthFailure(e);
+            return new HealthResult(status, status.message, e);
+        }
+    }
+
+    private static HealthStatus classifyHealthFailure(Throwable failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLiteException sqliteException) {
+                int primaryCode = sqliteException.getResultCode().code & 0xff;
+                return switch (SQLiteErrorCode.getErrorCode(primaryCode)) {
+                    case SQLITE_BUSY, SQLITE_LOCKED -> HealthStatus.LOCKED;
+                    case SQLITE_PERM, SQLITE_READONLY, SQLITE_CANTOPEN -> HealthStatus.PERMISSION_DENIED;
+                    case SQLITE_FULL -> HealthStatus.DISK_FULL;
+                    case SQLITE_CORRUPT, SQLITE_NOTADB -> HealthStatus.CORRUPT;
+                    default -> HealthStatus.OTHER;
+                };
+            }
+            if (cause instanceof AccessDeniedException || cause instanceof FileAlreadyExistsException
+                    || cause instanceof NotDirectoryException || cause instanceof SecurityException) {
+                return HealthStatus.PERMISSION_DENIED;
+            }
+        }
+        return HealthStatus.OTHER;
+    }
+
+    private static boolean passesQuickCheck(Connection conn) throws SQLException {
+        try (Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery("PRAGMA quick_check")) {
+            return rs.next() && "ok".equals(rs.getString(1)) && !rs.next();
+        }
+    }
+
+    public static synchronized Path createBackup() throws IOException, SQLException {
+        Path backupsDir = getBackupsDir();
+        Files.createDirectories(backupsDir);
+        Path tempBackupFile = Files.createTempFile(backupsDir, "base_datos-", ".tmp");
+        try {
+            // VACUUM INTO escribe una copia consistente incluso con WAL activo
+            try (Connection conn = getConnection();
+                 PreparedStatement stmt = conn.prepareStatement("VACUUM INTO ?")) {
+                stmt.setString(1, tempBackupFile.toAbsolutePath().toString());
+                stmt.execute();
+            }
+
+            LocalDateTime timestamp = LocalDateTime.now();
+            Path backupFile = backupsDir.resolve("base_datos-" + timestamp.format(BACKUP_TIMESTAMP) + ".bak");
+            while (Files.exists(backupFile)) {
+                timestamp = timestamp.plusNanos(1_000_000);
+                backupFile = backupsDir.resolve("base_datos-" + timestamp.format(BACKUP_TIMESTAMP) + ".bak");
+            }
+            Files.move(tempBackupFile, backupFile);
+
+            pruneOldBackups(backupFile);
+            return backupFile;
+        } finally {
+            Files.deleteIfExists(tempBackupFile);
+        }
+    }
+
+    private static void pruneOldBackups(Path newestBackup) throws IOException {
+        List<Path> backups = listBackups();
+        int keptCount = 0;
+        for (Path existingBackup : backups) {
+            if (existingBackup.equals(newestBackup) || keptCount < MAX_BACKUPS) {
+                keptCount++;
+            } else {
+                Files.deleteIfExists(existingBackup);
+            }
+        }
+    }
+
+    public static synchronized List<Path> listBackups() throws IOException {
+        Path backupsDir = getBackupsDir();
+        if (Files.notExists(backupsDir)) {
+            return List.of();
+        }
+        List<Path> backups = new ArrayList<>();
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(backupsDir, "*.bak")) {
+            for (Path candidate : stream) {
+                if (Files.isRegularFile(candidate)) {
+                    backups.add(candidate);
+                }
+            }
+        }
+        backups.sort(Comparator.comparing((Path file) -> file.getFileName().toString()).reversed());
+        return backups;
+    }
+
+    public static synchronized boolean restoreLatestBackup() throws IOException {
+        Path dbFile = Path.of(getDbFilePath()).toAbsolutePath();
+        for (Path backupFile : listBackups()) {
+            if (!isValidBackup(backupFile)) {
+                continue;
+            }
+            Path parentDir = dbFile.getParent();
+            Files.createDirectories(parentDir);
+            Path tempRestoreFile = Files.createTempFile(parentDir, "restauracion-", ".tmp");
+            try {
+                Files.copy(backupFile, tempRestoreFile, StandardCopyOption.REPLACE_EXISTING);
+                // Mueve la BD dañada y sus archivos -wal/-shm aparte antes de copiar el respaldo
+                quarantineCorruptFiles(dbFile);
+                Files.move(tempRestoreFile, dbFile, StandardCopyOption.REPLACE_EXISTING);
+                initializedPath = null;
+                return true;
+            } finally {
+                Files.deleteIfExists(tempRestoreFile);
+            }
+        }
+        return false;
+    }
+
+    private static void quarantineCorruptFiles(Path dbFile) throws IOException {
+        String timestamp = LocalDateTime.now().format(BACKUP_TIMESTAMP);
+        String corruptFileName = "base_datos-corrupt-" + timestamp + ".db";
+        moveIfExists(dbFile.resolveSibling(dbFile.getFileName() + "-wal"),
+                dbFile.resolveSibling(corruptFileName + "-wal"));
+        moveIfExists(dbFile.resolveSibling(dbFile.getFileName() + "-shm"),
+                dbFile.resolveSibling(corruptFileName + "-shm"));
+        moveIfExists(dbFile, dbFile.resolveSibling(corruptFileName));
+    }
+
+    private static void moveIfExists(Path source, Path target) throws IOException {
+        if (Files.exists(source)) {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private static boolean isValidBackup(Path backup) {
+        SQLiteConfig config = new SQLiteConfig();
+        config.setReadOnly(true);
+        config.setBusyTimeout(BUSY_TIMEOUT_MS);
+        try {
+            if (Files.size(backup) == 0) {
+                return false;
+            }
+            try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + backup, config.toProperties())) {
+                if (!passesQuickCheck(conn)) {
+                    return false;
+                }
+                try (Statement stmt = conn.createStatement();
+                     ResultSet rs = stmt.executeQuery(
+                             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='Categoria'")) {
+                    return rs.next();
+                }
+            }
+        } catch (IOException | SQLException e) {
+            return false;
+        }
+    }
+
+    private static Path getBackupsDir() {
+        Path parent = Path.of(getDbFilePath()).getParent();
+        return parent == null ? Path.of("backups") : parent.resolve("backups");
     }
 
     /**

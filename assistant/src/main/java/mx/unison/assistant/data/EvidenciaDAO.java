@@ -50,7 +50,7 @@ public class EvidenciaDAO {
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
                 Evidencia ev = mapRow(rs);
-                ev.setDocumentos(documentoDAO.findByEvidencia(ev.getIdEvidencia()));
+                ev.setDocumentos(documentoDAO.findByEvidencia(conn, ev.getIdEvidencia()));
                 list.add(ev);
             }
         }
@@ -67,7 +67,7 @@ public class EvidenciaDAO {
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
                 Evidencia ev = mapRow(rs);
-                ev.setDocumentos(documentoDAO.findByEvidencia(ev.getIdEvidencia()));
+                ev.setDocumentos(documentoDAO.findByEvidencia(conn, ev.getIdEvidencia()));
                 list.add(ev);
             }
         }
@@ -90,7 +90,7 @@ public class EvidenciaDAO {
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     Evidencia ev = mapRow(rs);
-                    ev.setDocumentos(documentoDAO.findByEvidencia(ev.getIdEvidencia()));
+                    ev.setDocumentos(documentoDAO.findByEvidencia(conn, ev.getIdEvidencia()));
                     list.add(ev);
                 }
             }
@@ -114,7 +114,7 @@ public class EvidenciaDAO {
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     Evidencia ev = mapRow(rs);
-                    ev.setDocumentos(documentoDAO.findByEvidencia(ev.getIdEvidencia()));
+                    ev.setDocumentos(documentoDAO.findByEvidencia(conn, ev.getIdEvidencia()));
                     list.add(ev);
                 }
             }
@@ -138,7 +138,7 @@ public class EvidenciaDAO {
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     Evidencia ev = mapRow(rs);
-                    ev.setDocumentos(documentoDAO.findByEvidencia(ev.getIdEvidencia()));
+                    ev.setDocumentos(documentoDAO.findByEvidencia(conn, ev.getIdEvidencia()));
                     list.add(ev);
                 }
             }
@@ -161,7 +161,7 @@ public class EvidenciaDAO {
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
                     Evidencia ev = mapRow(rs);
-                    ev.setDocumentos(documentoDAO.findByEvidencia(ev.getIdEvidencia()));
+                    ev.setDocumentos(documentoDAO.findByEvidencia(conn, ev.getIdEvidencia()));
                     return Optional.of(ev);
                 }
             }

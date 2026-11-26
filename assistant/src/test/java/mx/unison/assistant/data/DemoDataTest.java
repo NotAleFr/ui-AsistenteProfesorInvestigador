@@ -17,6 +17,7 @@ class DemoDataTest {
     @AfterEach
     void tearDown() {
         System.clearProperty(DatabaseConnection.DEMO_PROPERTY);
+        DatabaseConnection.setDbFilePath(null);
     }
 
     @Test

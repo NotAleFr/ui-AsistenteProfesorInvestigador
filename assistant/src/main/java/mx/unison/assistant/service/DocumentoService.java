@@ -12,6 +12,7 @@ import java.sql.SQLException;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import mx.unison.assistant.data.AppPaths;
 import mx.unison.assistant.data.DocumentoDAO;
 import mx.unison.assistant.model.Documento;
 
@@ -22,7 +23,7 @@ import mx.unison.assistant.model.Documento;
  */
 public class DocumentoService {
 
-    public static final String ROOT_ATTACHMENTS_DIR = "archivos_adjuntos";
+    public static final String ROOT_ATTACHMENTS_DIR = AppPaths.ATTACHMENTS_DIRECTORY;
 
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
             ".pdf", ".jpg", ".jpeg", ".png", ".docx", ".xlsx"
@@ -32,7 +33,7 @@ public class DocumentoService {
     private final String baseAttachmentsPath;
 
     public DocumentoService() {
-        this(new DocumentoDAO(), ROOT_ATTACHMENTS_DIR);
+        this(new DocumentoDAO(), AppPaths.getAttachmentsDir().toString());
     }
 
     public DocumentoService(DocumentoDAO documentoDAO, String baseAttachmentsPath) {
@@ -68,7 +69,11 @@ public class DocumentoService {
         Files.copy(sourceFile.toPath(), targetPath);
 
         Documento doc = new Documento();
-        doc.setRutaAlmacenamiento(targetPath.toString().replace("\\", "/"));
+        Path attachmentsDir = Paths.get(baseAttachmentsPath).normalize();
+        Path storedPath = attachmentsDir.endsWith(ROOT_ATTACHMENTS_DIR)
+                ? Path.of(ROOT_ATTACHMENTS_DIR, categoryFolder, storedFileName)
+                : Path.of(categoryFolder, storedFileName);
+        doc.setRutaAlmacenamiento(storedPath.toString().replace('\\', '/'));
         doc.setNombreOriginal(originalName);
         doc.setIdEvidencia(idEvidencia);
 
@@ -141,10 +146,24 @@ public class DocumentoService {
             return;
         }
         try {
-            Files.deleteIfExists(Paths.get(doc.getRutaAlmacenamiento()));
+            Files.deleteIfExists(resolveFile(doc));
         } catch (IOException ignored) {
             // El registro ya no existe en la BD; un archivo que no se pudo borrar solo queda huérfano
         }
+    }
+
+    /** Resuelve la ruta en disco de un adjunto registrado en la base de datos. */
+    public Path resolveFile(Documento doc) {
+        Path storedPath = Paths.get(doc.getRutaAlmacenamiento()).normalize();
+        if (storedPath.isAbsolute()) {
+            return storedPath;
+        }
+        Path attachmentsDir = Paths.get(baseAttachmentsPath).toAbsolutePath().normalize();
+        Path dataDir = attachmentsDir.getParent();
+        if (storedPath.startsWith(ROOT_ATTACHMENTS_DIR) && dataDir != null) {
+            return dataDir.resolve(storedPath);
+        }
+        return attachmentsDir.resolve(storedPath);
     }
 
     /**

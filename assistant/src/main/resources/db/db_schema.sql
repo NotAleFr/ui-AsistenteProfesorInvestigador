@@ -101,7 +101,7 @@ CREATE TABLE Alertas (
 	IdAlerta INTEGER PRIMARY KEY AUTOINCREMENT,
 	ContenidoAlerta TEXT NOT NULL,
 	FechaHoraCreacion TEXT DEFAULT CURRENT_TIMESTAMP
-);
+) STRICT;
 
 -- ---------- Índices sobre llaves foráneas ----------
 
