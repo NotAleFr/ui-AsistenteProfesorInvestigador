@@ -80,6 +80,7 @@ public class MainWindow {
     public void show() {
         frame.setVisible(true);
         layoutCenterLayers();
+        SwingUtilities.invokeLater(() -> alertasPanel.showStartupReminders(frame));
     }
 
     public void showSection(Section section) {

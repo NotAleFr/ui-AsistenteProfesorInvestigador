@@ -107,10 +107,13 @@ public class AlertasPanel extends JPanel {
     }
 
     public void showStartupReminders(Component parent) {
-        Ui.info(
-            parent,
-            "Recordatorios de inicio",
-            "Tienes evidencias pendientes próximas a su fecha límite en este periodo."
-        );
+        try {
+            List<String> reminders = services.alertas.getStartupReminders();
+            if (!reminders.isEmpty()) {
+                Ui.info(parent, "Recordatorios de inicio", "• " + String.join("\n• ", reminders));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
     }
 }

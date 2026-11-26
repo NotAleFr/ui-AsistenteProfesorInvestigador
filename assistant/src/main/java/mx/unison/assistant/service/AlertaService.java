@@ -1,6 +1,8 @@
 package mx.unison.assistant.service;
 
 import java.sql.SQLException;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import mx.unison.assistant.data.AlertaDAO;
@@ -23,6 +25,55 @@ public class AlertaService {
     public AlertaService(EvidenciaDAO evidenciaDAO, AlertaDAO alertaDAO) {
         this.evidenciaDAO = evidenciaDAO;
         this.alertaDAO = alertaDAO;
+    }
+
+    public List<String> getStartupReminders() throws SQLException {
+        return getStartupReminders(LocalDate.now());
+    }
+
+    public List<String> getStartupReminders(LocalDate today) throws SQLException {
+        List<String> reminders = new ArrayList<>();
+        String previousPeriod = Periodo.isPeriodStart(today) ? Periodo.previous(Periodo.of(today)) : null;
+        LocalDate tomorrow = today.plusDays(1);
+        int previousPeriodPendingCount = 0;
+        int dueWithin24HoursCount = 0;
+        for (Evidencia evidencia : evidenciaDAO.findActive()) {
+            if (!"Pendiente".equalsIgnoreCase(evidencia.getNombreEstatus())) {
+                continue;
+            }
+            if (previousPeriod != null && previousPeriod.equals(evidencia.getPeriodo())) {
+                previousPeriodPendingCount++;
+            }
+            if (isDueWithin24Hours(evidencia.getFechaFinalizacion(), today, tomorrow)) {
+                dueWithin24HoursCount++;
+            }
+        }
+        if (previousPeriodPendingCount > 0) {
+            reminders.add("Hay " + previousPeriodPendingCount + " evidencia(s) pendiente(s) del periodo anterior ("
+                    + previousPeriod + ").");
+        }
+        if (Periodo.isMidPeriod(today)) {
+            reminders.add("A mitad del periodo, sube las evidencias de tus actividades recientes.");
+        }
+        if (Periodo.isPeriodEnd(today)) {
+            reminders.add("Entrega las evidencias de las actividades que finalizan en este periodo.");
+        }
+        if (dueWithin24HoursCount > 0) {
+            reminders.add("Hay " + dueWithin24HoursCount + " evidencia(s) pendiente(s) con fecha límite hoy o mañana.");
+        }
+        return reminders;
+    }
+
+    private boolean isDueWithin24Hours(String endDateText, LocalDate today, LocalDate tomorrow) {
+        if (endDateText == null || endDateText.isBlank()) {
+            return false;
+        }
+        try {
+            LocalDate deadline = LocalDate.parse(endDateText);
+            return !deadline.isBefore(today) && !deadline.isAfter(tomorrow);
+        } catch (DateTimeParseException e) {
+            return false;
+        }
     }
 
     /**

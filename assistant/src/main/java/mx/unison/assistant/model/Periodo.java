@@ -1,11 +1,25 @@
 package mx.unison.assistant.model;
 
 import java.time.LocalDate;
+import java.time.MonthDay;
 import java.util.ArrayList;
 import java.util.List;
 
 // Periodos escolares de RF-01: "2026-1" es de enero a junio y "2026-2" de julio a diciembre
 public class Periodo {
+
+    private static final MonthDay SEMESTER_1_START_FROM = MonthDay.of(1, 1);
+    private static final MonthDay SEMESTER_1_START_TO = MonthDay.of(1, 20);
+    private static final MonthDay SEMESTER_2_START_FROM = MonthDay.of(8, 1);
+    private static final MonthDay SEMESTER_2_START_TO = MonthDay.of(8, 20);
+    private static final MonthDay SEMESTER_1_MID_FROM = MonthDay.of(3, 15);
+    private static final MonthDay SEMESTER_1_MID_TO = MonthDay.of(3, 31);
+    private static final MonthDay SEMESTER_2_MID_FROM = MonthDay.of(10, 1);
+    private static final MonthDay SEMESTER_2_MID_TO = MonthDay.of(10, 15);
+    private static final MonthDay SEMESTER_1_END_FROM = MonthDay.of(6, 1);
+    private static final MonthDay SEMESTER_1_END_TO = MonthDay.of(6, 30);
+    private static final MonthDay SEMESTER_2_END_FROM = MonthDay.of(11, 25);
+    private static final MonthDay SEMESTER_2_END_TO = MonthDay.of(12, 20);
 
     public static boolean isValid(String periodo) {
         if (periodo == null || periodo.length() != 6) {
@@ -45,6 +59,34 @@ public class Periodo {
         years.add(current - 1);
         years.add(current - 2);
         return years;
+    }
+
+    public static String previous(String periodo) {
+        if (!isValid(periodo)) {
+            throw new IllegalArgumentException("El periodo debe tener el formato AAAA-1 o AAAA-2.");
+        }
+        return periodo.endsWith("-2") ? periodo.substring(0, 4) + "-1" : (yearOf(periodo) - 1) + "-2";
+    }
+
+    // Julio queda entre periodos y no activa recordatorios de inicio, mitad ni cierre.
+    public static boolean isPeriodStart(LocalDate date) {
+        return inWindow(date, SEMESTER_1_START_FROM, SEMESTER_1_START_TO)
+                || inWindow(date, SEMESTER_2_START_FROM, SEMESTER_2_START_TO);
+    }
+
+    public static boolean isMidPeriod(LocalDate date) {
+        return inWindow(date, SEMESTER_1_MID_FROM, SEMESTER_1_MID_TO)
+                || inWindow(date, SEMESTER_2_MID_FROM, SEMESTER_2_MID_TO);
+    }
+
+    public static boolean isPeriodEnd(LocalDate date) {
+        return inWindow(date, SEMESTER_1_END_FROM, SEMESTER_1_END_TO)
+                || inWindow(date, SEMESTER_2_END_FROM, SEMESTER_2_END_TO);
+    }
+
+    private static boolean inWindow(LocalDate date, MonthDay start, MonthDay end) {
+        MonthDay monthDay = MonthDay.from(date);
+        return !monthDay.isBefore(start) && !monthDay.isAfter(end);
     }
 
     public static List<String> periodsOf(int year) {
