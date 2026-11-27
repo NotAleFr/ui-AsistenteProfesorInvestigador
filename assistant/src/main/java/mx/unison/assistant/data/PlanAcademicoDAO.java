@@ -140,6 +140,27 @@ public class PlanAcademicoDAO {
         }
     }
 
+    /**
+     * Consigue el plan academico activo
+     * @return {@link Optional} con el plan encontrado.
+     * @throws SQLException
+     */
+
+    public Optional<PlanAcademico> getPlanActivo_Optional() throws SQLException {
+        String sql = "SELECT IdPlanAcademico, NombrePlan, AnioPlan, PeriodoPlan, Activo "
+                   + "FROM PlanAcademico WHERE Activo = 1";
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return Optional.of(mapRow(rs));
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
     private PlanAcademico mapRow(ResultSet rs) throws SQLException {
         return new PlanAcademico(
                 rs.getInt("IdPlanAcademico"),
