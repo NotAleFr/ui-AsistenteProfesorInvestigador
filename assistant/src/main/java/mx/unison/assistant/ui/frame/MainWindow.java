@@ -8,6 +8,7 @@ import javax.swing.*;
 import mx.unison.assistant.service.AppServices;
 import mx.unison.assistant.ui.views.*;
 
+
 public class MainWindow {
     
     JFrame frame;
@@ -26,7 +27,7 @@ public class MainWindow {
 
         PlanAcademicoView planView = new PlanAcademicoView(services);
         SeguimientoView seguimientoView = new SeguimientoView(services);
-        ReportesView reportesView = new ReportesView();
+        ReportesView reportesView = new ReportesView(services);
         AjustesView ajustesView = new AjustesView(services);
 
         content.add(planView, Section.ACADEMIC_PLAN.name());
