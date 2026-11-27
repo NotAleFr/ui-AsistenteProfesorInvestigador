@@ -15,10 +15,13 @@ import mx.unison.assistant.data.EvidenciaDAO;
 
 public class ReporteService {
 
+  private final EvidenciaService evidenciaService;
+  private final PlanService planService; 
   //turn SQL table into HTML
- 
-
-
+  public ReporteService(EvidenciaService evidenciaService, PlanService planService) {
+    this.evidenciaService = evidenciaService;
+    this.planService = planService;
+  }
 
 }
 
