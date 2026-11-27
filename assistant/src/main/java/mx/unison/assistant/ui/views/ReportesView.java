@@ -3,24 +3,54 @@ package mx.unison.assistant.ui.views;
 import java.awt.*;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
+import java.sql.SQLException;
+import java.util.Optional;
 
+import mx.unison.assistant.model.PlanAcademico;
+import mx.unison.assistant.service.AppServices;
 import mx.unison.assistant.ui.common.PageHeader;
 import mx.unison.assistant.ui.common.SampleData;
 import mx.unison.assistant.ui.common.Ui;
 
-public class ReportesView extends JPanel {
 
+public class ReportesView extends JPanel {
+    final AppServices services;
+
+    //arreglar combo box
     JComboBox<String> yearCombo = new JComboBox<>(SampleData.getYears());
     JLabel reportSubtitle = new JLabel();
     DefaultTableModel previewModel;
     int selectedYear = Integer.parseInt(SampleData.getYears()[0]);
+    int idPlanActivo;
+    PlanAcademico planAExportar;
+    //ERROR HANDLING: si no hay plan a exportar
+    boolean estaPlanDisponible;
 
-    public ReportesView() {
+    public ReportesView(AppServices services) {
         setLayout(new BorderLayout());
+        this.services = services; 
+        this.estaPlanDisponible = false;
+
+        try { 
+            Optional<PlanAcademico> planAcademicoOpt = this.services.planes.getActivoPlanAcademico();
+            if (planAcademicoOpt.isPresent()){
+                this.estaPlanDisponible = true;
+                this.planAExportar = planAcademicoOpt.get();
+                this.idPlanActivo = this.planAExportar.getIdPlanAcademico();
+            } else {
+                Ui.info(this, "Error", "Hubo un error consiguiendo el Plan Activo, verifica que se ha dado de alta un plan");
+                this.estaPlanDisponible = false;
+            }
+            
+        } catch (SQLException sqle) {
+
+        }
+
         Ui.applyViewStyle(this);
 
         PageHeader header = new PageHeader("Reporte de evidencia anual");
         header.addAction(Ui.primaryButton("Exportar reporte anual", () -> onExport()));
+        header.addAction(Ui.secondaryButton("Refrescar Plan", () -> onRefresh())); 
 
         JPanel top = new JPanel(new BorderLayout());
         top.setOpaque(false);
@@ -78,7 +108,6 @@ public class ReportesView extends JPanel {
         JPanel docHeader = new JPanel();
         docHeader.setLayout(new BoxLayout(docHeader, BoxLayout.Y_AXIS));
         docHeader.setOpaque(false);
-
         JTextArea uniLabel = new JTextArea(
             "UNIVERSIDAD DE SONORA\n"
             + "FACULTAD INTERDISCIPLINARIA DE INGENIERÍA · DEPARTAMENTO DE INGENIERÍA INDUSTRIAL\n"
@@ -160,5 +189,25 @@ public class ReportesView extends JPanel {
     // Conectar: ReporteService.generateAnnualReport(year)
     public void onExport() {
         Ui.info(this, "Exportar reporte anual", "Se exportará el reporte anual " + selectedYear + " (PDF + ZIP de adjuntos).");
+    }
+
+    public void onRefresh() {
+        String infoAdicional = "";
+        try { 
+            Optional<PlanAcademico> planAcademicoOpt = this.services.planes.getActivoPlanAcademico();
+            if (planAcademicoOpt.isPresent()){
+                this.estaPlanDisponible = true;
+                this.planAExportar = planAcademicoOpt.get();
+                this.idPlanActivo = this.planAExportar.getIdPlanAcademico();
+            } else {
+                Ui.info(this, "Error", "Hubo un error consiguiendo el Plan Activo, verifica que se ha dado de alta un plan");
+                this.estaPlanDisponible = false;
+                infoAdicional = " pero ocurrio un error";
+            }
+        } catch (SQLException sqle) {
+
+        }
+
+        Ui.info(this, "Refrescar Plan Activo", "Se han refrescado los datos" + infoAdicional);
     }
 }
