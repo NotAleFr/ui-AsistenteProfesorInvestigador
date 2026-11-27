@@ -104,6 +104,12 @@ public class PlanService {
         alertaService.checkAlerts();
     }
 
+    public Optional<PlanAcademico> getActivoPlanAcademico() throws SQLException {
+        Optional<PlanAcademico> planAcademico = null;
+        planAcademico = planDAO.getPlanActivo_Optional();
+        return planAcademico;
+    } 
+
     public void deletePlan(int idPlanAcademico) throws SQLException {
         List<Documento> documentos = new ArrayList<>();
         for (Evidencia ev : evidenciaDAO.findByPlan(idPlanAcademico)) {
