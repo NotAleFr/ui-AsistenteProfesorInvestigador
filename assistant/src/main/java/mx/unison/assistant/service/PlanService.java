@@ -103,7 +103,12 @@ public class PlanService {
         planDAO.activate(idPlanAcademico);
         alertaService.checkAlerts();
     }
-
+    /**
+     * Consigue el Plan activo
+     * @return PlanAcademico
+     * @throws SQLException
+     * TODO: errorHandling 
+     */
     public Optional<PlanAcademico> getActivoPlanAcademico() throws SQLException {
         Optional<PlanAcademico> planAcademico = null;
         planAcademico = planDAO.getPlanActivo_Optional();
