@@ -53,6 +53,21 @@ public class DocumentoService {
      */
     public Documento attachDocument(File sourceFile, int idEvidencia, String categoryName)
             throws IOException, SQLException {
+        Documento doc = stageFile(sourceFile, idEvidencia, categoryName);
+        try {
+            documentoDAO.insert(doc);
+        } catch (SQLException e) {
+            deleteFile(doc);
+            throw e;
+        }
+        return doc;
+    }
+
+    /**
+     * Valida y copia un archivo a su subcarpeta de categoría calculando SHA-256 y tamaño,
+     * sin registrar todavía la fila en SQLite.
+     */
+    public Documento stageFile(File sourceFile, int idEvidencia, String categoryName) throws IOException {
         validate(sourceFile);
         String originalName = sourceFile.getName();
 
@@ -80,9 +95,7 @@ public class DocumentoService {
         try {
             doc.setSha256(computeSha256(targetPath.toFile()));
             doc.setTamanoBytes(Files.size(targetPath));
-            documentoDAO.insert(doc);
-        } catch (IOException | SQLException e) {
-            // Si no se pudo registrar, se borra la copia para no dejar archivos huérfanos
+        } catch (IOException e) {
             try {
                 Files.deleteIfExists(targetPath);
             } catch (IOException cleanup) {

@@ -221,6 +221,97 @@ class BackendServicesTest {
     }
 
     @Test
+    void testFalloAlAdjuntarRevierteCambiosDeSeguimientoYAdjuntosParciales() throws Exception {
+        Evidencia registro = registroEnSeguimiento();
+        evidenciaService.updateTracking(registro, List.of(crearPdf("anterior.pdf")), null);
+        Evidencia estadoInicial = evidenciaService.findById(registro.getIdEvidencia()).get();
+        Documento documentoAnterior = estadoInicial.getDocumentos().get(0);
+        Path archivoAnterior = documentoService.resolveFile(documentoAnterior);
+        Path carpetaCategoria = archivoAnterior.getParent();
+
+        DocumentoService documentoServiceConFallo = new DocumentoService(
+                new DocumentoDAO(), tempDir.resolve("archivos_adjuntos").toString()) {
+            private int intentos = 0;
+
+            @Override
+            public Documento stageFile(File sourceFile, int idEvidencia, String categoryName)
+                    throws java.io.IOException {
+                intentos++;
+                if (intentos == 2) {
+                    throw new java.io.IOException("Error simulado al copiar segundo adjunto");
+                }
+                return super.stageFile(sourceFile, idEvidencia, categoryName);
+            }
+        };
+        EvidenciaService servicioConFallo = new EvidenciaService(
+                new EvidenciaDAO(), documentoServiceConFallo, alertaService);
+
+        Evidencia editada = evidenciaService.findById(registro.getIdEvidencia()).get();
+        editada.setTitulo("Título modificado que debe revertirse");
+        editada.setIdEstatus(ESTATUS_ENTREGADO);
+        editada.setIdOpcion(OPCION_COORDINADOR);
+
+        assertThrows(java.io.IOException.class, () -> servicioConFallo.updateTracking(
+                editada,
+                List.of(crearPdf("primero.pdf"), crearPdf("segundo.pdf")),
+                List.of(documentoAnterior)));
+
+        Evidencia trasFallo = evidenciaService.findById(registro.getIdEvidencia()).get();
+        assertEquals(estadoInicial.getTitulo(), trasFallo.getTitulo());
+        assertEquals(estadoInicial.getIdEstatus(), trasFallo.getIdEstatus());
+        assertEquals(estadoInicial.getIdOpcion(), trasFallo.getIdOpcion());
+        assertEquals(estadoInicial.getFechaModificacion(), trasFallo.getFechaModificacion());
+        assertEquals(1, trasFallo.getDocumentos().size());
+        assertEquals("anterior.pdf", trasFallo.getDocumentos().get(0).getNombreOriginal());
+        assertTrue(Files.exists(archivoAnterior));
+        try (var archivosEnDisco = Files.list(carpetaCategoria)) {
+            assertEquals(1, archivosEnDisco.count());
+        }
+    }
+
+    @Test
+    void testFalloSqlEnTransaccionDeSeguimientoRevierteTodoYPermiteReintentarSinDuplicar() throws Exception {
+        Evidencia registro = registroEnSeguimiento();
+        evidenciaService.updateTracking(registro, List.of(crearPdf("anterior.pdf")), null);
+        Evidencia estadoInicial = evidenciaService.findById(registro.getIdEvidencia()).get();
+        Documento documentoAnterior = estadoInicial.getDocumentos().get(0);
+        Path archivoAnterior = documentoService.resolveFile(documentoAnterior);
+        Path carpetaCategoria = archivoAnterior.getParent();
+        File archivoNuevo = crearPdf("nuevo.pdf");
+
+        Evidencia conOpcionInvalida = evidenciaService.findById(registro.getIdEvidencia()).get();
+        conOpcionInvalida.setTitulo("Cambio rechazado por SQL");
+        conOpcionInvalida.setIdOpcion(OPCION_DE_OTRO_TIPO);
+
+        assertThrows(SQLException.class, () -> evidenciaService.updateTracking(
+                conOpcionInvalida,
+                List.of(archivoNuevo),
+                List.of(documentoAnterior)));
+
+        Evidencia trasFallo = evidenciaService.findById(registro.getIdEvidencia()).get();
+        assertEquals(estadoInicial.getTitulo(), trasFallo.getTitulo());
+        assertEquals(estadoInicial.getFechaModificacion(), trasFallo.getFechaModificacion());
+        assertEquals(1, trasFallo.getDocumentos().size());
+        assertTrue(Files.exists(archivoAnterior));
+        try (var archivosEnDisco = Files.list(carpetaCategoria)) {
+            assertEquals(1, archivosEnDisco.count());
+        }
+
+        // Reintentar con la opción válida deja exactamente el archivo nuevo sin duplicados
+        conOpcionInvalida.setIdOpcion(OPCION_COORDINADOR);
+        evidenciaService.updateTracking(conOpcionInvalida, List.of(archivoNuevo), List.of(documentoAnterior));
+
+        Evidencia trasReintento = evidenciaService.findById(registro.getIdEvidencia()).get();
+        assertEquals("Cambio rechazado por SQL", trasReintento.getTitulo());
+        assertEquals(1, trasReintento.getDocumentos().size());
+        assertEquals("nuevo.pdf", trasReintento.getDocumentos().get(0).getNombreOriginal());
+        assertFalse(Files.exists(archivoAnterior));
+        try (var archivosEnDisco = Files.list(carpetaCategoria)) {
+            assertEquals(1, archivosEnDisco.count());
+        }
+    }
+
+    @Test
     void testSeguimientoDeRegistroBorradoDaMensaje() throws Exception {
         Evidencia registro = registroEnSeguimiento();
         planService.deleteRecord(registro.getIdEvidencia());

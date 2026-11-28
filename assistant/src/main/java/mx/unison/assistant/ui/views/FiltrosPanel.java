@@ -2,10 +2,13 @@ package mx.unison.assistant.ui.views;
 
 import java.awt.*;
 import java.sql.SQLException;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Set;
+import java.util.TreeSet;
 import javax.swing.*;
 
 import mx.unison.assistant.model.Estatus;
-import mx.unison.assistant.model.Periodo;
 import mx.unison.assistant.model.TipoEvidencia;
 import mx.unison.assistant.service.AppServices;
 import mx.unison.assistant.ui.common.Ui;
@@ -14,17 +17,35 @@ import mx.unison.assistant.ui.common.Ui;
 public class FiltrosPanel extends JPanel {
 
     static final String ALL = "Todos";
+    static final String ANY_FILE_COUNT = "Cualquiera";
+
+    public record FilterCriteria(
+        String period,
+        String type,
+        String status,
+        Double maxScore,
+        String fileCount,
+        String fileType
+    ) {
+        public static FilterCriteria defaults() {
+            return new FilterCriteria(ALL, ALL, ALL, null, ANY_FILE_COUNT, ALL);
+        }
+
+        public FilterCriteria withPeriod(String nextPeriod) {
+            return new FilterCriteria(nextPeriod, type, status, maxScore, fileCount, fileType);
+        }
+    }
 
     final AppServices services;
 
-    JComboBox<String> yearCombo = new JComboBox<>();
     JComboBox<String> periodCombo = new JComboBox<>();
     JComboBox<String> typeCombo = new JComboBox<>();
     JComboBox<String> statusCombo = new JComboBox<>();
     JTextField maxScoreField = new JTextField();
-    JComboBox<String> fileCountCombo = new JComboBox<>(new String[] { "Cualquiera", "Con archivos", "Sin archivos" });
+    JComboBox<String> fileCountCombo = new JComboBox<>(new String[] { ANY_FILE_COUNT, "Con archivos", "Sin archivos" });
     JComboBox<String> fileTypeCombo = new JComboBox<>(new String[] { ALL, ".pdf", ".jpg", ".jpeg", ".png", ".docx", ".xlsx" });
 
+    FilterCriteria appliedCriteria = FilterCriteria.defaults();
     Runnable onApplyCallback;
     Runnable onClearCallback;
 
@@ -36,16 +57,7 @@ public class FiltrosPanel extends JPanel {
         // Los nombres de tipo son largos. Con un prototipo corto el panel no se ensancha
         typeCombo.setPrototypeDisplayValue("Tipo seleccionado");
 
-        yearCombo.addItem(ALL);
-        for (Integer year : Periodo.recentYears()) {
-            yearCombo.addItem(String.valueOf(year));
-        }
-
         periodCombo.addItem(ALL);
-        for (String period : Periodo.recentPeriods()) {
-            periodCombo.addItem(period);
-        }
-
         typeCombo.addItem(ALL);
         statusCombo.addItem(ALL);
         try {
@@ -95,7 +107,6 @@ public class FiltrosPanel extends JPanel {
         maxScoreField.putClientProperty("JTextField.placeholderText", "Ej. 50");
 
         JPanel[] groups = {
-            Ui.field("Año", yearCombo),
             Ui.field("Periodo", periodCombo),
             Ui.field("Tipo de evidencia", typeCombo),
             Ui.field("Estatus", statusCombo),
@@ -130,35 +141,103 @@ public class FiltrosPanel extends JPanel {
         return footer;
     }
 
+    public void setAvailablePeriods(Collection<String> periods) {
+        Set<String> sortedPeriods = new TreeSet<>(Collections.reverseOrder());
+        if (periods != null) {
+            for (String period : periods) {
+                if (period != null && !period.isBlank()) {
+                    sortedPeriods.add(period.trim());
+                }
+            }
+        }
+
+        String previousPeriod = appliedCriteria.period();
+        periodCombo.removeAllItems();
+        periodCombo.addItem(ALL);
+        for (String period : sortedPeriods) {
+            periodCombo.addItem(period);
+        }
+
+        if (previousPeriod != null && sortedPeriods.contains(previousPeriod)) {
+            periodCombo.setSelectedItem(previousPeriod);
+        } else {
+            periodCombo.setSelectedItem(ALL);
+            appliedCriteria = appliedCriteria.withPeriod(ALL);
+        }
+    }
+
+    public void setSelectedPeriod(String period) {
+        String targetPeriod = (period != null && containsItem(periodCombo, period)) ? period : ALL;
+        periodCombo.setSelectedItem(targetPeriod);
+        appliedCriteria = appliedCriteria.withPeriod(targetPeriod);
+    }
+
     public void onApply() {
+        Double parsedMaxScore;
+        try {
+            parsedMaxScore = parseMaxScore(maxScoreField.getText());
+        } catch (IllegalArgumentException e) {
+            Ui.info(this, "Aviso", e.getMessage());
+            maxScoreField.requestFocusInWindow();
+            return;
+        }
+        appliedCriteria = new FilterCriteria(
+            selectedOrDefault(periodCombo, ALL),
+            selectedOrDefault(typeCombo, ALL),
+            selectedOrDefault(statusCombo, ALL),
+            parsedMaxScore,
+            selectedOrDefault(fileCountCombo, ANY_FILE_COUNT),
+            selectedOrDefault(fileTypeCombo, ALL)
+        );
         if (onApplyCallback != null) {
             onApplyCallback.run();
         }
     }
 
     public void onClearAll() {
-        yearCombo.setSelectedIndex(0);
         periodCombo.setSelectedIndex(0);
         typeCombo.setSelectedIndex(0);
         statusCombo.setSelectedIndex(0);
         maxScoreField.setText("");
         fileCountCombo.setSelectedIndex(0);
         fileTypeCombo.setSelectedIndex(0);
+        appliedCriteria = FilterCriteria.defaults();
         if (onClearCallback != null) {
             onClearCallback.run();
         }
     }
 
-    // [0]=año, [1]=periodo, [2]=tipo, [3]=estatus, [4]=puntajeMax, [5]=archivos, [6]=tipoArchivo
-    public String[] getFilter() {
-        return new String[] {
-            (String) yearCombo.getSelectedItem(),
-            (String) periodCombo.getSelectedItem(),
-            (String) typeCombo.getSelectedItem(),
-            (String) statusCombo.getSelectedItem(),
-            maxScoreField.getText().trim(),
-            (String) fileCountCombo.getSelectedItem(),
-            (String) fileTypeCombo.getSelectedItem()
-        };
+    public FilterCriteria getAppliedFilter() {
+        return appliedCriteria;
+    }
+
+    static Double parseMaxScore(String rawText) {
+        if (rawText == null || rawText.trim().isEmpty()) {
+            return null;
+        }
+        String trimmed = rawText.trim();
+        try {
+            double parsed = Double.parseDouble(trimmed);
+            if (!Double.isFinite(parsed) || parsed < 0) {
+                throw new IllegalArgumentException("El puntaje máximo debe ser un número mayor o igual a 0.");
+            }
+            return parsed;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("El puntaje máximo debe ser un valor numérico (por ejemplo, 50 o 12.5).");
+        }
+    }
+
+    private static boolean containsItem(JComboBox<String> combo, String value) {
+        for (int i = 0; i < combo.getItemCount(); i++) {
+            if (value.equals(combo.getItemAt(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String selectedOrDefault(JComboBox<String> combo, String fallback) {
+        String selected = (String) combo.getSelectedItem();
+        return selected != null ? selected : fallback;
     }
 }

@@ -79,33 +79,52 @@ public class EvidenciaService {
         }
 
         evidencia.setAnio(Periodo.yearOf(evidencia.getPeriodo()));
-        evidenciaDAO.update(evidencia);
-
-        if (newFiles != null) {
-            // Se lee de nuevo por si cambió el tipo de actividad, porque la categoría decide la carpeta del archivo
-            Evidencia guardada = evidenciaDAO.findById(evidencia.getIdEvidencia()).get();
-            List<Documento> added = new ArrayList<>();
-            try {
-                for (File file : newFiles) {
-                    added.add(documentoService.attachDocument(
-                            file, guardada.getIdEvidencia(), guardada.getNombreCategoria()));
-                }
-            } catch (IOException | SQLException e) {
-                for (Documento doc : added) {
-                    documentoService.removeDocument(doc);
-                }
-                throw e;
-            }
+        List<Documento> stagedDocuments = stageNewFiles(evidencia, newFiles);
+        try {
+            evidenciaDAO.saveTrackingChanges(evidencia, stagedDocuments, removed);
+        } catch (SQLException | RuntimeException e) {
+            deleteFilesQuietly(stagedDocuments);
+            throw e;
         }
 
-        // Los anteriores se quitan hasta que los nuevos ya están guardados
-        if (removed != null) {
-            for (Documento doc : removed) {
-                documentoService.removeDocument(doc);
-            }
-        }
+        // Los archivos anteriores se borran en disco solo después de confirmar la transacción en BD
+        deleteFilesQuietly(removed);
+        refreshAlertsAfterCommit();
+    }
 
-        alertaService.checkAlerts();
+    private List<Documento> stageNewFiles(Evidencia evidencia, List<File> newFiles) throws IOException, SQLException {
+        if (newFiles == null || newFiles.isEmpty()) {
+            return List.of();
+        }
+        String categoryName = evidenciaDAO.findCategoryNameByType(evidencia.getIdTipoEvidencia())
+                .orElseThrow(() -> new IllegalArgumentException("El tipo de actividad seleccionado no existe."));
+        List<Documento> stagedDocuments = new ArrayList<>();
+        try {
+            for (File file : newFiles) {
+                stagedDocuments.add(documentoService.stageFile(file, evidencia.getIdEvidencia(), categoryName));
+            }
+        } catch (IOException e) {
+            deleteFilesQuietly(stagedDocuments);
+            throw e;
+        }
+        return stagedDocuments;
+    }
+
+    private void deleteFilesQuietly(List<Documento> documents) {
+        if (documents == null) {
+            return;
+        }
+        for (Documento doc : documents) {
+            documentoService.deleteFile(doc);
+        }
+    }
+
+    private void refreshAlertsAfterCommit() {
+        try {
+            alertaService.checkAlerts();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
     }
 
     private void validateDates(Evidencia ev) {

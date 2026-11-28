@@ -9,6 +9,7 @@ import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import mx.unison.assistant.model.Documento;
 import mx.unison.assistant.model.Evidencia;
 
 /**
@@ -222,6 +223,23 @@ public class EvidenciaDAO {
         }
     }
 
+    public Optional<String> findCategoryNameByType(int idTipoEvidencia) throws SQLException {
+        String sql = "SELECT c.NombreCategoria "
+                   + "FROM TipoEvidencia t "
+                   + "INNER JOIN Categoria c ON t.IdCategoria = c.IdCategoria "
+                   + "WHERE t.IdTipoEvidencia = ?";
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, idTipoEvidencia);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return Optional.ofNullable(rs.getString("NombreCategoria"));
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
     /**
      * Guarda el seguimiento de una evidencia (Tabla 3). No cambia el plan al que pertenece.
      * El trigger de SQLite actualiza automáticamente {@code FechaModificacion}.
@@ -230,11 +248,52 @@ public class EvidenciaDAO {
      * @throws SQLException si ocurre un error SQL.
      */
     public void update(Evidencia ev) throws SQLException {
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            update(conn, ev);
+        }
+    }
+
+    /**
+     * Persiste el seguimiento de una evidencia junto con altas y bajas de metadatos de documentos
+     * en una sola transacción SQLite.
+     */
+    public void saveTrackingChanges(
+            Evidencia ev,
+            List<Documento> documentsToInsert,
+            List<Documento> documentsToDelete) throws SQLException {
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                update(conn, ev);
+                if (documentsToInsert != null) {
+                    for (Documento doc : documentsToInsert) {
+                        documentoDAO.insert(conn, doc);
+                    }
+                }
+                if (documentsToDelete != null) {
+                    for (Documento doc : documentsToDelete) {
+                        if (doc != null) {
+                            documentoDAO.delete(conn, doc.getIdDocumento());
+                        }
+                    }
+                }
+                conn.commit();
+            } catch (SQLException e) {
+                try {
+                    conn.rollback();
+                } catch (SQLException rollbackError) {
+                    e.addSuppressed(rollbackError);
+                }
+                throw e;
+            }
+        }
+    }
+
+    private void update(Connection conn, Evidencia ev) throws SQLException {
         String sql = "UPDATE Evidencia SET Titulo = ?, Descripcion = ?, Anio = ?, Periodo = ?, "
                    + "FechaInicio = ?, FechaFinalizacion = ?, IdTipoEvidencia = ?, IdOpcion = ?, IdEstatus = ?, "
                    + "IdAcreditacion = ? WHERE IdEvidencia = ?";
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, ev.getTitulo());
             ps.setString(2, ev.getDescripcion());
             ps.setInt(3, ev.getAnio());

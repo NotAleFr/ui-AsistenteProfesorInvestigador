@@ -1,5 +1,7 @@
 package mx.unison.assistant.model;
 
+import java.math.BigDecimal;
+
 /**
  * Representa un criterio de evaluación u opción de participación dentro de un {@link TipoEvidencia},
  * junto con su puntaje asociado según el Anexo 5 del Reglamento PEDPD (tabla {@code Opcion}).
@@ -57,12 +59,19 @@ public class Opcion {
 
     /**
      * Formatea la opción para desplegarse en combos de la UI con el formato "Nombre (N pts)".
+     * Conserva decimales cuando el puntaje no es entero (por ejemplo, "0.5 pts").
      *
-     * @return etiqueta formateada con el puntaje redondeado.
+     * @return etiqueta formateada con el puntaje.
      */
     public String getFormattedLabel() {
-        int pts = (int) Math.round(puntajeOpcion);
-        return nombreOpcion + " (" + pts + " pts)";
+        return nombreOpcion + " (" + formatScore(puntajeOpcion) + " pts)";
+    }
+
+    private static String formatScore(double score) {
+        if (score == Math.rint(score)) {
+            return String.valueOf((long) score);
+        }
+        return BigDecimal.valueOf(score).stripTrailingZeros().toPlainString();
     }
 
     @Override

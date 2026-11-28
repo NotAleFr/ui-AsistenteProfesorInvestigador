@@ -40,7 +40,7 @@ public class SeguimientoDialog extends JDialog {
 
     JPanel documentsPanel = new JPanel();
     JTextArea notesArea = new JTextArea(4, 24);
-    InfoBox infoBox = new InfoBox("Acreditación (PEDPD)");
+    InfoBox infoBox = new InfoBox("Definición y acreditación (PEDPD)");
 
     Evidencia sourceEvidence;
     List<Documento> existingDocuments = new ArrayList<>();
@@ -264,15 +264,31 @@ public class SeguimientoDialog extends JDialog {
             Ui.info(this, "Aviso", "Selecciona una opción para este tipo de actividad.");
             return;
         }
+        String startDateIso;
+        String dueDateIso;
         try {
-            String startDateIso = Fechas.toIso(startDateField.getText());
-            String dueDateIso = Fechas.toIso(dueDateField.getText());
+            startDateIso = Fechas.toIso(startDateField.getText());
+            dueDateIso = Fechas.toIso(dueDateField.getText());
             if (startDateIso != null && dueDateIso != null && dueDateIso.compareTo(startDateIso) < 0) {
                 Ui.info(this, "Aviso", "La fecha de finalización no puede ser anterior a la fecha de inicio.");
                 return;
             }
         } catch (IllegalArgumentException e) {
             Ui.info(this, "Aviso", e.getMessage());
+            return;
+        }
+        Evidencia updatedEvidence = buildEvidence(startDateIso, dueDateIso);
+        try {
+            services.evidencias.updateTracking(updatedEvidence, newFiles, removedDocuments);
+        } catch (IllegalArgumentException e) {
+            JOptionPane.showMessageDialog(this, e.getMessage(), "Aviso", JOptionPane.WARNING_MESSAGE);
+            return;
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(this, e.getMessage(), "Error de archivo", JOptionPane.ERROR_MESSAGE);
+            return;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "No se pudo guardar el seguimiento.", "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
         saved = true;
@@ -295,11 +311,35 @@ public class SeguimientoDialog extends JDialog {
         chooser.setFileFilter(preferred);
 
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            for (File file : chooser.getSelectedFiles()) {
-                newFiles.add(file);
+            if (addUniqueStagedFiles(newFiles, chooser.getSelectedFiles())) {
+                refreshDocumentsList();
             }
-            refreshDocumentsList();
         }
+    }
+
+    static boolean addUniqueStagedFiles(List<File> stagedFiles, File[] selectedFiles) {
+        if (selectedFiles == null || selectedFiles.length == 0) {
+            return false;
+        }
+        boolean addedAny = false;
+        for (File candidateFile : selectedFiles) {
+            if (candidateFile == null || isFileAlreadyStaged(stagedFiles, candidateFile)) {
+                continue;
+            }
+            stagedFiles.add(candidateFile);
+            addedAny = true;
+        }
+        return addedAny;
+    }
+
+    private static boolean isFileAlreadyStaged(List<File> stagedFiles, File candidateFile) {
+        Path candidatePath = candidateFile.toPath().toAbsolutePath().normalize();
+        for (File stagedFile : stagedFiles) {
+            if (stagedFile != null && stagedFile.toPath().toAbsolutePath().normalize().equals(candidatePath)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void onRemoveExistingDocument(int index) {
@@ -357,7 +397,7 @@ public class SeguimientoDialog extends JDialog {
         if (!populating && optionCombo.getItemCount() > 0) {
             optionCombo.setSelectedIndex(0);
         }
-        infoBox.setText(Ui.typeInfoText("", type.getContenidoAcreditacion()));
+        infoBox.setText(Ui.typeInfoText(type.getDefinicionTipoEvidencia(), type.getContenidoAcreditacion()));
     }
 
     public void fill(Evidencia ev) {
@@ -486,7 +526,7 @@ public class SeguimientoDialog extends JDialog {
         return saved;
     }
 
-    public Evidencia getEvidence() {
+    private Evidencia buildEvidence(String startDateIso, String dueDateIso) {
         Evidencia ev = new Evidencia();
         if (sourceEvidence != null) {
             ev.setIdEvidencia(sourceEvidence.getIdEvidencia());
@@ -532,16 +572,8 @@ public class SeguimientoDialog extends JDialog {
             ev.setNombreAcreditacion(selectedAcc.getNombreAcreditacion());
         }
 
-        ev.setFechaInicio(Fechas.toIso(startDateField.getText()));
-        ev.setFechaFinalizacion(Fechas.toIso(dueDateField.getText()));
+        ev.setFechaInicio(startDateIso);
+        ev.setFechaFinalizacion(dueDateIso);
         return ev;
-    }
-
-    public List<File> getNewFiles() {
-        return newFiles;
-    }
-
-    public List<Documento> getRemovedDocuments() {
-        return removedDocuments;
     }
 }

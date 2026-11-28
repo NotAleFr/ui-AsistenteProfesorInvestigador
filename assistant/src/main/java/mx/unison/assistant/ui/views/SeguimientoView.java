@@ -4,7 +4,6 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
-import java.io.IOException;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -49,7 +48,7 @@ public class SeguimientoView extends JPanel {
     FiltrosPanel filtrosPanel;
     List<Evidencia> allRows = new ArrayList<>();
     List<Evidencia> visibleRows = new ArrayList<>();
-    String selectedSemester = "Todos";
+    String selectedSemesterKey = null;
     boolean updatingYears = false;
     Runnable onDataChanged;
 
@@ -84,21 +83,18 @@ public class SeguimientoView extends JPanel {
         mainArea.add(north, BorderLayout.NORTH);
         mainArea.add(tableArea, BorderLayout.CENTER);
 
-        filtrosPanel = new FiltrosPanel(services, () -> applyFilter(), () -> applyFilter());
+        filtrosPanel = new FiltrosPanel(services, () -> onSideFiltersChanged(), () -> onSideFiltersChanged());
         filtrosPanel.setVisible(false);
 
         add(mainArea, BorderLayout.CENTER);
         add(filtrosPanel, BorderLayout.EAST);
 
-        loadRows();
-        loadYears();
-        rebuildSemesterTabs();
-        applyFilter();
+        reload();
     }
 
     private void loadYears() {
         String previousYear = (String) yearCombo.getSelectedItem();
-        String currentYear = String.valueOf(Periodo.yearOf(Periodo.current()));
+        int currentCalendarYear = Periodo.yearOf(Periodo.current());
         Set<Integer> years = new TreeSet<>(Collections.reverseOrder());
         years.addAll(Periodo.recentYears());
         for (Evidencia item : allRows) {
@@ -107,21 +103,45 @@ public class SeguimientoView extends JPanel {
             }
         }
 
-        boolean hasPreviousYear = false;
+        String targetYear = resolveSelectedYear(previousYear, allRows, years, currentCalendarYear);
         updatingYears = true;
         try {
             yearCombo.removeAllItems();
             for (Integer year : years) {
-                String yearText = String.valueOf(year);
-                yearCombo.addItem(yearText);
-                if (yearText.equals(previousYear)) {
-                    hasPreviousYear = true;
-                }
+                yearCombo.addItem(String.valueOf(year));
             }
-            yearCombo.setSelectedItem(hasPreviousYear ? previousYear : currentYear);
+            yearCombo.setSelectedItem(targetYear);
         } finally {
             updatingYears = false;
         }
+    }
+
+    static String resolveSelectedYear(
+            String previousYear,
+            List<Evidencia> rows,
+            Set<Integer> availableYears,
+            int currentCalendarYear) {
+        if (previousYear != null) {
+            for (Integer year : availableYears) {
+                if (previousYear.equals(String.valueOf(year))) {
+                    return previousYear;
+                }
+            }
+        }
+
+        int latestEligibleYear = -1;
+        if (rows != null) {
+            for (Evidencia item : rows) {
+                int itemYear = item.getAnio();
+                if (itemYear == currentCalendarYear) {
+                    return String.valueOf(currentCalendarYear);
+                }
+                if (itemYear > 0 && itemYear < currentCalendarYear && itemYear > latestEligibleYear) {
+                    latestEligibleYear = itemYear;
+                }
+            }
+        }
+        return String.valueOf(latestEligibleYear > 0 ? latestEligibleYear : currentCalendarYear);
     }
 
     public void setOnDataChanged(Runnable onDataChanged) {
@@ -131,8 +151,30 @@ public class SeguimientoView extends JPanel {
     public void reload() {
         loadRows();
         loadYears();
+        refreshFilterPeriodsForSelectedYear();
+        rebuildSemesterTabs();
+        filtrosPanel.setSelectedPeriod(selectedSemesterKey);
+        applyFilter();
+    }
+
+    private void onSideFiltersChanged() {
+        FiltrosPanel.FilterCriteria criteria = filtrosPanel.getAppliedFilter();
+        selectedSemesterKey = criteria.period();
         rebuildSemesterTabs();
         applyFilter();
+    }
+
+    private void refreshFilterPeriodsForSelectedYear() {
+        String selectedYear = getSelectedYear();
+        filtrosPanel.setAvailablePeriods(List.of(selectedYear + "-2", selectedYear + "-1"));
+    }
+
+    private String getSelectedYear() {
+        String selectedYear = (String) yearCombo.getSelectedItem();
+        if (selectedYear == null || selectedYear.isBlank()) {
+            return String.valueOf(Periodo.yearOf(Periodo.current()));
+        }
+        return selectedYear;
     }
 
     private JPanel createToolbar() {
@@ -167,7 +209,9 @@ public class SeguimientoView extends JPanel {
         yearCombo.setPreferredSize(new Dimension(84, 34));
         yearCombo.addActionListener(e -> {
             if (!updatingYears) {
+                refreshFilterPeriodsForSelectedYear();
                 rebuildSemesterTabs();
+                filtrosPanel.setSelectedPeriod(selectedSemesterKey);
                 applyFilter();
             }
         });
@@ -197,27 +241,21 @@ public class SeguimientoView extends JPanel {
 
     private void rebuildSemesterTabs() {
         tabsPanel.removeAll();
-        String year = String.valueOf(yearCombo.getSelectedItem());
-        String[] options = { "Todos", "Semestre " + year + "-1", "Semestre " + year + "-2" };
+        String selectedYear = getSelectedYear();
 
-        String preservedSelection = "Todos";
-        for (String option : options) {
-            if (option.equals(selectedSemester)) {
-                preservedSelection = option;
-                break;
-            }
-        }
-        selectedSemester = preservedSelection;
+        List<String> tabKeys = buildSemesterTabKeys(selectedYear);
+        selectedSemesterKey = resolveSelectedSemesterKey(selectedYear, selectedSemesterKey, allRows, Periodo.current());
 
         ButtonGroup group = new ButtonGroup();
-        for (String option : options) {
-            JToggleButton tab = new JToggleButton(option);
+        for (String tabKey : tabKeys) {
+            JToggleButton tab = new JToggleButton(formatSemesterTabLabel(tabKey));
             tab.putClientProperty("FlatLaf.styleClass", "tab");
-            if (option.equals(selectedSemester)) {
+            if (tabKey.equals(selectedSemesterKey)) {
                 tab.setSelected(true);
             }
             tab.addActionListener(e -> {
-                selectedSemester = option;
+                selectedSemesterKey = tabKey;
+                filtrosPanel.setSelectedPeriod(tabKey);
                 applyFilter();
             });
             group.add(tab);
@@ -226,6 +264,51 @@ public class SeguimientoView extends JPanel {
 
         tabsPanel.revalidate();
         tabsPanel.repaint();
+    }
+
+    static List<String> buildSemesterTabKeys(String year) {
+        return List.of(year + "-2", year + "-1", FiltrosPanel.ALL);
+    }
+
+    static String formatSemesterTabLabel(String semesterKey) {
+        return FiltrosPanel.ALL.equals(semesterKey) ? FiltrosPanel.ALL : "Semestre " + semesterKey;
+    }
+
+    static String resolveSelectedSemesterKey(
+            String year,
+            String currentSelectionKey,
+            List<Evidencia> rows,
+            String currentPeriod) {
+        List<String> tabKeys = buildSemesterTabKeys(year);
+        if (currentSelectionKey != null && tabKeys.contains(currentSelectionKey)) {
+            return currentSelectionKey;
+        }
+
+        String secondSemesterPeriod = year + "-2";
+        String firstSemesterPeriod = year + "-1";
+        boolean hasSecondSemester = false;
+        boolean hasFirstSemester = false;
+        if (rows != null) {
+            for (Evidencia item : rows) {
+                String period = item.getPeriodo();
+                if (secondSemesterPeriod.equals(period)) {
+                    hasSecondSemester = true;
+                } else if (firstSemesterPeriod.equals(period)) {
+                    hasFirstSemester = true;
+                }
+            }
+        }
+
+        if (hasSecondSemester) {
+            return secondSemesterPeriod;
+        }
+        if (hasFirstSemester) {
+            return firstSemesterPeriod;
+        }
+        if (currentPeriod != null && currentPeriod.startsWith(year + "-")) {
+            return currentPeriod;
+        }
+        return secondSemesterPeriod;
     }
 
     private JScrollPane createTableScroll() {
@@ -364,72 +447,60 @@ public class SeguimientoView extends JPanel {
 
     public void applyFilter() {
         String query = searchField.getText().trim().toLowerCase();
-        String toolbarYear = String.valueOf(yearCombo.getSelectedItem());
-        String[] side = filtrosPanel.getFilter();
-        String sideYear = side[0];
-        String sidePeriod = side[1];
-        String sideType = side[2];
-        String sideStatus = side[3];
-        String maxScoreText = side[4];
-        String fileCountFilter = side[5];
-        String fileTypeFilter = side[6];
-
-        Double maxScore = null;
-        if (!maxScoreText.isEmpty()) {
-            try {
-                maxScore = Double.parseDouble(maxScoreText);
-            } catch (NumberFormatException ignored) {
-                maxScore = null;
-            }
-        }
+        String toolbarYear = getSelectedYear();
+        FiltrosPanel.FilterCriteria criteria = filtrosPanel.getAppliedFilter();
 
         List<Evidencia> filtered = new ArrayList<>();
         for (Evidencia item : allRows) {
-            String title = item.getTitulo() != null ? item.getTitulo() : "";
-            String period = item.getPeriodo() != null ? item.getPeriodo() : "";
-            String type = item.getNombreTipoEvidencia() != null ? item.getNombreTipoEvidencia() : "";
-            String status = item.getNombreEstatus() != null ? item.getNombreEstatus() : "";
-            List<Documento> docs = item.getDocumentos() != null ? item.getDocumentos() : List.of();
-
-            if (!query.isEmpty() && !title.toLowerCase().contains(query)) {
-                continue;
+            if (matchesFilters(item, query, toolbarYear, criteria)) {
+                filtered.add(item);
             }
-
-            String activeYear = !"Todos".equals(sideYear) ? sideYear : toolbarYear;
-            if (!period.startsWith(activeYear)) {
-                continue;
-            }
-            if (!"Todos".equals(selectedSemester) && !selectedSemester.endsWith(period)) {
-                continue;
-            }
-            if (!"Todos".equals(sidePeriod) && !period.equals(sidePeriod)) {
-                continue;
-            }
-            if (!"Todos".equals(sideType) && !type.equals(sideType)) {
-                continue;
-            }
-            if (!"Todos".equals(sideStatus) && !status.equalsIgnoreCase(sideStatus)) {
-                continue;
-            }
-            if (maxScore != null && item.getPuntajeOpcion() > maxScore) {
-                continue;
-            }
-            if ("Con archivos".equals(fileCountFilter) && docs.isEmpty()) {
-                continue;
-            }
-            if ("Sin archivos".equals(fileCountFilter) && !docs.isEmpty()) {
-                continue;
-            }
-            if (!"Todos".equals(fileTypeFilter) && !hasFileWithExtension(docs, fileTypeFilter)) {
-                continue;
-            }
-
-            filtered.add(item);
         }
         loadTable(filtered);
     }
 
-    private boolean hasFileWithExtension(List<Documento> docs, String extension) {
+    static boolean matchesFilters(
+            Evidencia item,
+            String queryLower,
+            String toolbarYear,
+            FiltrosPanel.FilterCriteria criteria) {
+        String title = item.getTitulo() != null ? item.getTitulo() : "";
+        String period = item.getPeriodo() != null ? item.getPeriodo() : "";
+        String type = item.getNombreTipoEvidencia() != null ? item.getNombreTipoEvidencia() : "";
+        String status = item.getNombreEstatus() != null ? item.getNombreEstatus() : "";
+        List<Documento> docs = item.getDocumentos() != null ? item.getDocumentos() : List.of();
+
+        if (!queryLower.isEmpty() && !title.toLowerCase().contains(queryLower)) {
+            return false;
+        }
+        if (toolbarYear != null && !period.startsWith(toolbarYear + "-")) {
+            return false;
+        }
+        if (!FiltrosPanel.ALL.equals(criteria.period()) && !period.equals(criteria.period())) {
+            return false;
+        }
+        if (!FiltrosPanel.ALL.equals(criteria.type()) && !type.equals(criteria.type())) {
+            return false;
+        }
+        if (!FiltrosPanel.ALL.equals(criteria.status()) && !status.equalsIgnoreCase(criteria.status())) {
+            return false;
+        }
+        if (criteria.maxScore() != null && item.getPuntajeOpcion() > criteria.maxScore()) {
+            return false;
+        }
+        if ("Con archivos".equals(criteria.fileCount()) && docs.isEmpty()) {
+            return false;
+        }
+        if ("Sin archivos".equals(criteria.fileCount()) && !docs.isEmpty()) {
+            return false;
+        }
+        if (!FiltrosPanel.ALL.equals(criteria.fileType()) && !hasFileWithExtension(docs, criteria.fileType())) {
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean hasFileWithExtension(List<Documento> docs, String extension) {
         for (Documento doc : docs) {
             String name = doc.getNombreOriginal();
             if (name != null && name.toLowerCase().endsWith(extension.toLowerCase())) {
@@ -473,21 +544,9 @@ public class SeguimientoView extends JPanel {
         dialog.setVisible(true);
 
         if (dialog.isSaved()) {
-            try {
-                Evidencia updated = dialog.getEvidence();
-                services.evidencias.updateTracking(updated, dialog.getNewFiles(), dialog.getRemovedDocuments());
-                loadRows();
-                applyFilter();
-                if (onDataChanged != null) {
-                    onDataChanged.run();
-                }
-            } catch (IllegalArgumentException e) {
-                JOptionPane.showMessageDialog(this, e.getMessage(), "Aviso", JOptionPane.WARNING_MESSAGE);
-            } catch (IOException e) {
-                JOptionPane.showMessageDialog(this, e.getMessage(), "Error de archivo", JOptionPane.ERROR_MESSAGE);
-            } catch (SQLException e) {
-                e.printStackTrace();
-                JOptionPane.showMessageDialog(this, "No se pudo guardar el seguimiento.", "Error", JOptionPane.ERROR_MESSAGE);
+            reload();
+            if (onDataChanged != null) {
+                onDataChanged.run();
             }
         }
     }

@@ -52,10 +52,15 @@ public class DocumentoDAO {
      * @throws SQLException si ocurre un error SQL.
      */
     public int insert(Documento doc) throws SQLException {
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            return insert(conn, doc);
+        }
+    }
+
+    int insert(Connection conn, Documento doc) throws SQLException {
         String sql = "INSERT INTO Documento (RutaAlmacenamiento, NombreOriginal, TamanoBytes, SHA256, IdEvidencia) "
                    + "VALUES (?, ?, ?, ?, ?)";
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, doc.getRutaAlmacenamiento());
             ps.setString(2, doc.getNombreOriginal());
             ps.setLong(3, doc.getTamanoBytes());
@@ -80,9 +85,14 @@ public class DocumentoDAO {
      * @throws SQLException si ocurre un error SQL.
      */
     public void delete(int idDocumento) throws SQLException {
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            delete(conn, idDocumento);
+        }
+    }
+
+    void delete(Connection conn, int idDocumento) throws SQLException {
         String sql = "DELETE FROM Documento WHERE IdDocumento = ?";
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, idDocumento);
             ps.executeUpdate();
         }
