@@ -18,10 +18,11 @@ public class AjustesService {
         DatabaseConnection.restoreDefaultCatalog();
     }
 
-    // Borra planes, evidencias y archivos adjuntos, y restaura el catálogo (RF-23).
-    // Primero la BD: si falla, no se borra ningún archivo
+    // Borra planes, evidencias, respaldos y adjuntos, y restaura el catálogo (RF-23).
+    // Si falla el borrado de respaldos, se conservan los adjuntos hasta reintentar.
     public void deleteAll() throws SQLException, IOException {
         DatabaseConnection.resetFullDatabase();
+        DatabaseConnection.clearBackups();
         documentoService.deleteAllFiles();
     }
 }

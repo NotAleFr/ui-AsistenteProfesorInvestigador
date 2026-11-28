@@ -3,6 +3,8 @@ package mx.unison.assistant.service;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -30,6 +32,7 @@ import mx.unison.assistant.model.Periodo;
 import mx.unison.assistant.model.PlanAcademico;
 import mx.unison.assistant.model.RecordatorioItem;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -489,6 +492,7 @@ class BackendServicesTest {
     void testRestablecerTodoBorraDatosYArchivos() throws Exception {
         Evidencia registro = registroEnSeguimiento();
         evidenciaService.updateTracking(registro, List.of(crearPdf("oficio.pdf")), null);
+        DatabaseConnection.createBackup();
         assertTrue(Files.exists(tempDir.resolve("archivos_adjuntos")));
 
         ajustesService.deleteAll(); // RF-23
@@ -496,6 +500,7 @@ class BackendServicesTest {
         assertTrue(planService.listPlans().isEmpty()); // no se crea ningún plan por defecto
         assertTrue(evidenciaService.findForTracking().isEmpty());
         assertFalse(Files.exists(tempDir.resolve("archivos_adjuntos")));
+        assertTrue(DatabaseConnection.listBackups().isEmpty());
         assertEquals(5, catalogoService.getCategories().size());
     }
 
@@ -547,6 +552,19 @@ class BackendServicesTest {
                     path.getFileName().toString().startsWith("test_asistente-corrupt-")
                             && path.getFileName().toString().endsWith(".db")));
         }
+    }
+
+    @Test
+    void testBaseSqliteSinTablasYSinRespaldosSeInicializaLimpia() throws Exception {
+        Path rutaBd = Path.of(DatabaseConnection.getDbFilePath());
+        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + rutaBd);
+             Statement stmt = conn.createStatement()) {
+            stmt.execute("PRAGMA journal_mode=WAL");
+        }
+        assertTrue(Files.size(rutaBd) > 0);
+
+        assertEquals(DatabaseConnection.HealthStatus.OK, DatabaseConnection.checkHealth().status());
+        assertEquals(5, catalogoService.getCategories().size());
     }
 
     @Test
@@ -654,6 +672,167 @@ class BackendServicesTest {
 
         assertTrue(alertaService.getStartupReminderItems(LocalDate.of(2026, 8, 1)).isEmpty());
         assertTrue(alertaService.getStartupReminderItems(LocalDate.of(2026, 7, 15)).isEmpty());
+    }
+
+    @Test
+    void testBaseDeCeroBytesConRespaldoOfreceRecuperarSinBorrarRespaldos() throws Exception {
+        registroEnSeguimiento();
+        DatabaseConnection.createBackup();
+        Path archivoBase = vaciarArchivoDeBase();
+
+        DatabaseConnection.HealthResult resultadoSalud = DatabaseConnection.checkHealth();
+
+        assertEquals(DatabaseConnection.HealthStatus.CORRUPT, resultadoSalud.status());
+        assertEquals(0, Files.size(archivoBase));
+        assertEquals(1, DatabaseConnection.listBackups().size());
+
+        assertTrue(DatabaseConnection.restoreLatestBackup());
+        assertEquals(DatabaseConnection.HealthStatus.OK, DatabaseConnection.checkHealth().status());
+        assertEquals(1, evidenciaService.findForTracking().size());
+    }
+
+    @Test
+    void testBaseDeCeroBytesSinRespaldoSeCreaDeNuevo() throws Exception {
+        vaciarArchivoDeBase();
+
+        assertEquals(DatabaseConnection.HealthStatus.OK, DatabaseConnection.checkHealth().status());
+        assertEquals(5, catalogoService.getCategories().size());
+    }
+
+    @Test
+    void testRestaurarOmiteRespaldosIncompletosOConLlavesRotas() throws Exception {
+        registroEnSeguimiento();
+        Path respaldoValido = DatabaseConnection.createBackup();
+
+        Path respaldoSinAlertas = respaldoValido.resolveSibling("base_datos-99991231_235959_998.bak");
+        Files.copy(respaldoValido, respaldoSinAlertas);
+        ejecutarEnArchivo(respaldoSinAlertas, "DROP TABLE Alertas");
+
+        Path respaldoConLlavesRotas = respaldoValido.resolveSibling("base_datos-99991231_235959_999.bak");
+        Files.copy(respaldoValido, respaldoConLlavesRotas);
+        ejecutarEnArchivo(respaldoConLlavesRotas, "UPDATE Evidencia SET IdPlanAcademico = 9999");
+
+        registroEnSeguimiento();
+        assertEquals(2, evidenciaService.findForTracking().size());
+        assertEquals(respaldoConLlavesRotas, DatabaseConnection.listBackups().getFirst());
+
+        assertTrue(DatabaseConnection.restoreLatestBackup());
+
+        assertEquals(DatabaseConnection.HealthStatus.OK, DatabaseConnection.checkHealth().status());
+        assertEquals(1, evidenciaService.findForTracking().size());
+        assertEquals(1, planService.listPlans().size());
+    }
+
+    @Test
+    void testBaseSinTablaRequeridaSeClasificaComoDanada() throws Exception {
+        assertEquals(DatabaseConnection.HealthStatus.OK, DatabaseConnection.checkHealth().status());
+        ejecutarEnArchivo(Path.of(DatabaseConnection.getDbFilePath()), "DROP TABLE Alertas");
+
+        assertEquals(DatabaseConnection.HealthStatus.CORRUPT, DatabaseConnection.checkHealth().status());
+    }
+
+    @Test
+    void testBaseConLlavesRotasSeClasificaComoDanada() throws Exception {
+        registroEnSeguimiento();
+        ejecutarEnArchivo(Path.of(DatabaseConnection.getDbFilePath()), "UPDATE Evidencia SET IdPlanAcademico = 9999");
+
+        assertEquals(DatabaseConnection.HealthStatus.CORRUPT, DatabaseConnection.checkHealth().status());
+    }
+
+    @Test
+    void testRestablecerTodoConAdjuntoAbiertoLimpiaLaBaseYAvisa() throws Exception {
+        // Windows no deja borrar un archivo abierto; en otros sistemas el borrado sí se puede
+        Assumptions.assumeTrue(System.getProperty("os.name").toLowerCase().contains("win"));
+        Evidencia registro = registroEnSeguimiento();
+        evidenciaService.updateTracking(registro, List.of(crearPdf("abierto.pdf")), null);
+        Documento adjunto = evidenciaService.findById(registro.getIdEvidencia()).orElseThrow().getDocumentos().get(0);
+        DatabaseConnection.createBackup();
+
+        try (FileInputStream archivoAbierto = new FileInputStream(documentoService.resolveFile(adjunto).toFile())) {
+            assertThrows(IOException.class, () -> ajustesService.deleteAll());
+        }
+
+        assertTrue(planService.listPlans().isEmpty());
+        assertTrue(evidenciaService.findForTracking().isEmpty());
+        assertTrue(DatabaseConnection.listBackups().isEmpty());
+    }
+
+    @Test
+    void testCambiosGuardadosNoFallanSiNoSePuedenActualizarLasAlertas() throws Exception {
+        PlanAcademico plan = planService.createPlan("Plan sin alertas", 2026, "2026-2");
+        ejecutarEnArchivo(Path.of(DatabaseConnection.getDbFilePath()), "DROP TABLE Alertas");
+
+        Evidencia registro = planService.addRecord(nuevoRegistro(plan));
+        assertEquals(1, planService.getRecords(plan.getIdPlanAcademico()).size());
+
+        registro.setTitulo("Título editado");
+        assertDoesNotThrow(() -> planService.updateRecord(registro));
+        assertEquals("Título editado", evidenciaService.findById(registro.getIdEvidencia()).orElseThrow().getTitulo());
+
+        assertEquals(0, planService.deleteRecord(registro.getIdEvidencia()));
+        assertTrue(planService.getRecords(plan.getIdPlanAcademico()).isEmpty());
+
+        assertEquals(0, planService.deletePlan(plan.getIdPlanAcademico()));
+        assertTrue(planService.listPlans().isEmpty());
+    }
+
+    @Test
+    void testRecordatorioDeVencimientoUsaCierreDelPeriodoSinFechaFinal() throws Exception {
+        agregarEvidencia("2026-2", true, 1, null);
+        agregarEvidencia("2026-2", true, ESTATUS_ENTREGADO, null);
+        agregarEvidencia("2026-1", true, 1, " ");
+
+        List<RecordatorioItem> items = alertaService.getStartupReminderItems(LocalDate.of(2026, 12, 30));
+
+        assertEquals(1, items.size());
+        assertEquals("Vence pronto", items.get(0).etiqueta());
+        assertEquals(1, items.get(0).evidencias().size());
+        assertEquals("2026-2", items.get(0).evidencias().get(0).getPeriodo());
+    }
+
+    @Test
+    void testAdjuntoQueNoSePuedeBorrarSeReportaAlEliminarRegistroYPlan() throws Exception {
+        Evidencia registro = registroEnSeguimiento();
+        evidenciaService.updateTracking(registro, List.of(crearPdf("bloqueado.pdf")), null);
+        Path archivo = bloquearAdjunto(registro);
+
+        assertEquals(1, planService.deleteRecord(registro.getIdEvidencia()));
+        assertTrue(evidenciaService.findById(registro.getIdEvidencia()).isEmpty());
+        assertTrue(Files.exists(archivo));
+
+        Evidencia otroRegistro = registroEnSeguimiento();
+        evidenciaService.updateTracking(otroRegistro, List.of(crearPdf("bloqueado2.pdf")), null);
+        bloquearAdjunto(otroRegistro);
+
+        assertEquals(1, planService.deletePlan(otroRegistro.getIdPlanAcademico()));
+        assertTrue(planService.getRecords(otroRegistro.getIdPlanAcademico()).isEmpty());
+    }
+
+    // Cambia el adjunto por una carpeta con contenido para provocar fallo de borrado sin depender del SO
+    private Path bloquearAdjunto(Evidencia registro) throws Exception {
+        Documento adjunto = evidenciaService.findById(registro.getIdEvidencia()).orElseThrow().getDocumentos().get(0);
+        Path archivo = documentoService.resolveFile(adjunto);
+        Files.delete(archivo);
+        Files.createDirectories(archivo);
+        Files.writeString(archivo.resolve("contenido.txt"), "no se puede borrar");
+        return archivo;
+    }
+
+    private Path vaciarArchivoDeBase() throws Exception {
+        Path archivoBase = Path.of(DatabaseConnection.getDbFilePath());
+        DatabaseConnection.setDbFilePath(archivoBase.toString());
+        Files.deleteIfExists(Path.of(archivoBase + "-wal"));
+        Files.deleteIfExists(Path.of(archivoBase + "-shm"));
+        Files.write(archivoBase, new byte[0]);
+        return archivoBase;
+    }
+
+    private void ejecutarEnArchivo(Path archivoBase, String sql) throws SQLException {
+        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + archivoBase);
+             Statement stmt = conn.createStatement()) {
+            stmt.execute("PRAGMA foreign_keys = OFF");
+            stmt.execute(sql);
+        }
     }
 
     private void agregarEvidencia(String periodo, boolean activo, int estatus, String fechaFinalizacion)

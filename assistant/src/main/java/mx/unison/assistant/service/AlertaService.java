@@ -64,7 +64,7 @@ public class AlertaService {
             if (isOpen && currentPeriod.equals(evidencia.getPeriodo())) {
                 currentPeriodOpen.add(evidencia);
             }
-            if (isPending && isDueWithin24Hours(evidencia.getFechaFinalizacion(), today, tomorrow)) {
+            if (isPending && isDueWithin24Hours(evidencia, today, tomorrow)) {
                 dueWithin24Hours.add(evidencia);
             }
         }
@@ -118,15 +118,21 @@ public class AlertaService {
         return items;
     }
 
-    private boolean isDueWithin24Hours(String endDateText, LocalDate today, LocalDate tomorrow) {
+    private boolean isDueWithin24Hours(Evidencia evidencia, LocalDate today, LocalDate tomorrow) {
+        LocalDate deadline = effectiveDeadline(evidencia);
+        return deadline != null && !deadline.isBefore(today) && !deadline.isAfter(tomorrow);
+    }
+
+    // Sin fecha de finalización vale el cierre del periodo, igual que en la tabla de Seguimiento
+    private LocalDate effectiveDeadline(Evidencia evidencia) {
+        String endDateText = evidencia.getFechaFinalizacion();
         if (endDateText == null || endDateText.isBlank()) {
-            return false;
+            return Periodo.isValid(evidencia.getPeriodo()) ? Periodo.endOf(evidencia.getPeriodo()) : null;
         }
         try {
-            LocalDate deadline = LocalDate.parse(endDateText);
-            return !deadline.isBefore(today) && !deadline.isAfter(tomorrow);
+            return LocalDate.parse(endDateText.trim());
         } catch (DateTimeParseException e) {
-            return false;
+            return null;
         }
     }
 

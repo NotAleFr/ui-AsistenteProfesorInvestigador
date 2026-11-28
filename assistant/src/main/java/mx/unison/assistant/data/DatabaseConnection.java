@@ -39,6 +39,10 @@ public class DatabaseConnection {
     private static final int BUSY_TIMEOUT_MS = 5000;
     private static final int MAX_BACKUPS = 3;
     private static final DateTimeFormatter BACKUP_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS");
+    // Tablas de db_schema.sql que debe tener una base o un respaldo para considerarse completo
+    private static final List<String> REQUIRED_TABLES = List.of(
+            "Categoria", "TipoEvidencia", "Opcion", "Estatus", "Acreditacion",
+            "PlanAcademico", "Evidencia", "Documento", "Alertas");
     // mvn exec:java pone esta propiedad (ver pom.xml) para que la BD nueva traiga db_demo.sql
     public static final String DEMO_PROPERTY = "asistente.demo";
     private static String dbFilePath;
@@ -151,12 +155,44 @@ public class DatabaseConnection {
     }
 
     public static HealthResult checkHealth() {
+        // Un archivo de 0 bytes se abriría como base nueva y vacía; si hay respaldos, se ofrece recuperarlos
+        if (isEmptyDatabaseFile() && hasValidBackup()) {
+            return new HealthResult(HealthStatus.CORRUPT, HealthStatus.CORRUPT.message, null);
+        }
+        // Si ya existe un archivo no vacío, se valida antes de inicializar para que una tabla faltante sea CORRUPT.
+        // Si es una BD SQLite válida pero sin ninguna tabla (p. ej. fallo en primer arranque), se trata como vacía.
+        Path dbFile = Path.of(getDbFilePath());
+        if (isNonEmptyDatabaseFile(dbFile)) {
+            try (Connection conn = openConnection(dbFile)) {
+                if (!passesQuickCheck(conn)) {
+                    return new HealthResult(HealthStatus.CORRUPT, HealthStatus.CORRUPT.message, null);
+                }
+                if (hasAnyUserTable(conn)) {
+                    HealthStatus status = passesIntegrityChecks(conn) ? HealthStatus.OK : HealthStatus.CORRUPT;
+                    return new HealthResult(status, status.message, null);
+                }
+                if (hasValidBackup()) {
+                    return new HealthResult(HealthStatus.CORRUPT, HealthStatus.CORRUPT.message, null);
+                }
+            } catch (SQLException | RuntimeException e) {
+                HealthStatus status = classifyHealthFailure(e);
+                return new HealthResult(status, status.message, e);
+            }
+        }
         try (Connection conn = getConnection()) {
-            HealthStatus status = passesQuickCheck(conn) ? HealthStatus.OK : HealthStatus.CORRUPT;
+            HealthStatus status = passesIntegrityChecks(conn) ? HealthStatus.OK : HealthStatus.CORRUPT;
             return new HealthResult(status, status.message, null);
         } catch (SQLException | RuntimeException e) {
             HealthStatus status = classifyHealthFailure(e);
             return new HealthResult(status, status.message, e);
+        }
+    }
+
+    private static boolean isNonEmptyDatabaseFile(Path dbFile) {
+        try {
+            return Files.isRegularFile(dbFile) && Files.size(dbFile) > 0;
+        } catch (IOException | SecurityException e) {
+            return false;
         }
     }
 
@@ -180,10 +216,67 @@ public class DatabaseConnection {
         return HealthStatus.OTHER;
     }
 
+    private static boolean isEmptyDatabaseFile() {
+        Path dbFile = Path.of(getDbFilePath());
+        try {
+            return Files.isRegularFile(dbFile) && Files.size(dbFile) == 0;
+        } catch (IOException | SecurityException e) {
+            return false;
+        }
+    }
+
+    private static boolean hasValidBackup() {
+        try {
+            for (Path backupFile : listBackups()) {
+                if (isValidBackup(backupFile)) {
+                    return true;
+                }
+            }
+        } catch (IOException | SecurityException e) {
+            return false;
+        }
+        return false;
+    }
+
+    // quick_check, todas las tablas de la aplicación y ninguna llave foránea rota
+    private static boolean passesIntegrityChecks(Connection conn) throws SQLException {
+        return passesQuickCheck(conn) && hasRequiredTables(conn) && hasNoBrokenForeignKeys(conn);
+    }
+
     private static boolean passesQuickCheck(Connection conn) throws SQLException {
         try (Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery("PRAGMA quick_check")) {
             return rs.next() && "ok".equals(rs.getString(1)) && !rs.next();
+        }
+    }
+
+    private static boolean hasAnyUserTable(Connection conn) throws SQLException {
+        try (Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(
+                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' LIMIT 1")) {
+            return rs.next();
+        }
+    }
+
+    private static boolean hasRequiredTables(Connection conn) throws SQLException {
+        try (PreparedStatement stmt = conn.prepareStatement(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?")) {
+            for (String table : REQUIRED_TABLES) {
+                stmt.setString(1, table);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    if (!rs.next()) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    private static boolean hasNoBrokenForeignKeys(Connection conn) throws SQLException {
+        try (Statement stmt = conn.createStatement();
+             ResultSet brokenRows = stmt.executeQuery("PRAGMA foreign_key_check")) {
+            return !brokenRows.next();
         }
     }
 
@@ -295,17 +388,29 @@ public class DatabaseConnection {
                 return false;
             }
             try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + backup, config.toProperties())) {
-                if (!passesQuickCheck(conn)) {
-                    return false;
-                }
-                try (Statement stmt = conn.createStatement();
-                     ResultSet rs = stmt.executeQuery(
-                             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='Categoria'")) {
-                    return rs.next();
-                }
+                return passesIntegrityChecks(conn);
             }
         } catch (IOException | SQLException e) {
             return false;
+        }
+    }
+
+    // Borra los respaldos .bak tras restablecer el sistema (RF-23) para no recuperar registros sin adjuntos
+    public static synchronized void clearBackups() throws IOException {
+        IOException firstFailure = null;
+        for (Path backupFile : listBackups()) {
+            try {
+                Files.deleteIfExists(backupFile);
+            } catch (IOException e) {
+                if (firstFailure == null) {
+                    firstFailure = e;
+                } else {
+                    firstFailure.addSuppressed(e);
+                }
+            }
+        }
+        if (firstFailure != null) {
+            throw firstFailure;
         }
     }
 

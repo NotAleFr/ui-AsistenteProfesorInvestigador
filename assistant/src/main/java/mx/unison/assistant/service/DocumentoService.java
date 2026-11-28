@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
@@ -153,15 +154,18 @@ public class DocumentoService {
      * Se usa cuando la BD ya borró el registro (por ejemplo, al eliminar un plan, RF-09).
      *
      * @param doc documento cuyo archivo se va a borrar.
+     * @return {@code false} si el archivo sigue en disco (por ejemplo, abierto en otro programa).
      */
-    public void deleteFile(Documento doc) {
+    public boolean deleteFile(Documento doc) {
         if (doc == null || doc.getRutaAlmacenamiento() == null) {
-            return;
+            return true;
         }
         try {
             Files.deleteIfExists(resolveFile(doc));
-        } catch (IOException ignored) {
-            // El registro ya no existe en la BD; un archivo que no se pudo borrar solo queda huérfano
+            return true;
+        } catch (IOException | InvalidPathException e) {
+            // El registro ya no existe en la BD; el archivo queda huérfano y se avisa a quien llamó
+            return false;
         }
     }
 

@@ -63,7 +63,7 @@ public class PlanService {
         }
         record.setAnio(Periodo.yearOf(record.getPeriodo()));
         int id = evidenciaDAO.insert(record);
-        alertaService.checkAlerts();
+        refreshAlertsAfterCommit();
         // Se lee de la BD para regresarlo con su estatus "Pendiente" y el nombre de su categoría
         return evidenciaDAO.findById(id).get();
     }
@@ -89,20 +89,21 @@ public class PlanService {
 
         record.setAnio(Periodo.yearOf(record.getPeriodo()));
         evidenciaDAO.updatePlanFields(record);
-        alertaService.checkAlerts();
+        refreshAlertsAfterCommit();
     }
 
-    public void deleteRecord(int idEvidencia) throws SQLException {
+    // Regresa cuántos adjuntos no se pudieron borrar del disco (por ejemplo, si están abiertos)
+    public int deleteRecord(int idEvidencia) throws SQLException {
         Optional<Evidencia> guardado = evidenciaDAO.findById(idEvidencia);
         evidenciaDAO.delete(idEvidencia);
 
         // Los archivos se borran al final: si la BD falla, no se pierde ningún archivo
+        int undeletedFileCount = 0;
         if (guardado.isPresent()) {
-            for (Documento doc : guardado.get().getDocumentos()) {
-                documentoService.deleteFile(doc);
-            }
+            undeletedFileCount = deleteFiles(guardado.get().getDocumentos());
         }
-        alertaService.checkAlerts();
+        refreshAlertsAfterCommit();
+        return undeletedFileCount;
     }
 
     public void activatePlan(int idPlanAcademico) throws SQLException {
@@ -110,6 +111,7 @@ public class PlanService {
         refreshAlertsAfterCommit();
     }
 
+    // El cambio ya quedó guardado. Un error en alertas no anula la operación.
     private void refreshAlertsAfterCommit() {
         try {
             alertaService.checkAlerts();
@@ -118,7 +120,8 @@ public class PlanService {
         }
     }
 
-    public void deletePlan(int idPlanAcademico) throws SQLException {
+    // Regresa cuántos adjuntos no se pudieron borrar del disco (por ejemplo, si están abiertos)
+    public int deletePlan(int idPlanAcademico) throws SQLException {
         List<Documento> documentos = new ArrayList<>();
         for (Evidencia ev : evidenciaDAO.findByPlan(idPlanAcademico)) {
             documentos.addAll(ev.getDocumentos());
@@ -127,9 +130,18 @@ public class PlanService {
         planDAO.delete(idPlanAcademico);
 
         // Los archivos se borran al final: si la BD falla, no se pierde ningún archivo
+        int undeletedFileCount = deleteFiles(documentos);
+        refreshAlertsAfterCommit();
+        return undeletedFileCount;
+    }
+
+    private int deleteFiles(List<Documento> documentos) {
+        int undeletedFileCount = 0;
         for (Documento doc : documentos) {
-            documentoService.deleteFile(doc);
+            if (!documentoService.deleteFile(doc)) {
+                undeletedFileCount++;
+            }
         }
-        alertaService.checkAlerts();
+        return undeletedFileCount;
     }
 }
