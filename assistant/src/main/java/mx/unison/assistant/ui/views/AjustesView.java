@@ -11,6 +11,10 @@ import mx.unison.assistant.ui.common.PageHeader;
 import mx.unison.assistant.ui.common.Ui;
 
 public class AjustesView extends JPanel {
+    static final String PARTIAL_RESET_MESSAGE = "Se borraron los planes y evidencias de la base de datos, pero "
+        + "no se pudieron eliminar algunos respaldos o archivos adjuntos (pueden estar abiertos en otro programa "
+        + "o sin permisos de escritura). Ciérralos y vuelve a restablecer para terminar de borrarlos.";
+
     final AppServices services;
 
     Runnable onDataChanged;
@@ -128,10 +132,14 @@ public class AjustesView extends JPanel {
                     JOptionPane.ERROR_MESSAGE
                 );
             } catch (IOException e) {
+                // La BD ya quedó limpia y las pantallas se recargan aunque falten archivos por borrar
                 e.printStackTrace();
+                if (onDataChanged != null) {
+                    onDataChanged.run();
+                }
                 JOptionPane.showMessageDialog(
                     this,
-                    "No se pudieron eliminar todos los archivos adjuntos. Cierra los archivos abiertos e intenta de nuevo.",
+                    PARTIAL_RESET_MESSAGE,
                     "Error",
                     JOptionPane.ERROR_MESSAGE
                 );

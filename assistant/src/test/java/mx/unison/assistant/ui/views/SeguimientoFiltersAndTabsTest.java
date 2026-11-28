@@ -4,12 +4,20 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.formdev.flatlaf.FlatLaf;
 import com.formdev.flatlaf.FlatLightLaf;
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.GraphicsEnvironment;
+import java.awt.Rectangle;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.Statement;
 import java.util.List;
 import java.util.Set;
+import javax.swing.JComboBox;
 import javax.swing.JToggleButton;
 import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
 import mx.unison.assistant.data.DatabaseConnection;
 import mx.unison.assistant.model.Evidencia;
 import mx.unison.assistant.model.Periodo;
@@ -161,6 +169,170 @@ class SeguimientoFiltersAndTabsTest {
             }
             assertTrue(foundMovedYear);
         });
+    }
+
+    @Test
+    void testBusquedaIgnoraAcentosYMayusculas() {
+        Evidencia evidencia = evidenciaEnPeriodo("2026-2");
+        evidencia.setTitulo("Investigación Educativa");
+
+        assertEquals("investigacion educativa", SeguimientoView.normalizeForSearch("Investigación Educativa"));
+        assertTrue(SeguimientoView.matchesFilters(evidencia,
+                SeguimientoView.normalizeForSearch("INVESTIGACION"), null, FiltrosPanel.FilterCriteria.defaults()));
+        assertTrue(SeguimientoView.matchesFilters(evidencia,
+                SeguimientoView.normalizeForSearch("educatíva"), null, FiltrosPanel.FilterCriteria.defaults()));
+        assertFalse(SeguimientoView.matchesFilters(evidencia,
+                SeguimientoView.normalizeForSearch("tutoria"), null, FiltrosPanel.FilterCriteria.defaults()));
+    }
+
+    @Test
+    void testPuntajeSinOpcionMuestraRaya() {
+        Evidencia sinOpcion = evidenciaEnPeriodo("2026-2");
+        assertEquals("—", SeguimientoView.formatScore(sinOpcion));
+
+        Evidencia conOpcion = evidenciaEnPeriodo("2026-2");
+        conOpcion.setIdOpcion(1);
+        conOpcion.setPuntajeOpcion(80.0);
+        assertEquals("80.0", SeguimientoView.formatScore(conOpcion));
+    }
+
+    @Test
+    void testVistaQueAbrioVaciaMuestraElAnioDeLaPrimeraEvidencia() throws Exception {
+        Assumptions.assumeFalse(GraphicsEnvironment.isHeadless());
+        DatabaseConnection.setDbFilePath(tempDir.resolve("test_ui_vacia.db").toString());
+        AppServices services = new AppServices();
+        int previousYear = Periodo.yearOf(Periodo.current()) - 1;
+
+        SeguimientoView[] vista = new SeguimientoView[1];
+        SwingUtilities.invokeAndWait(() -> {
+            prepararTema();
+            vista[0] = new SeguimientoView(services);
+            assertTrue(vista[0].allRows.isEmpty());
+        });
+
+        crearEvidenciaActiva(services, "Evidencia de otro año", previousYear, previousYear + "-1");
+
+        SwingUtilities.invokeAndWait(() -> {
+            vista[0].reload();
+            assertEquals(String.valueOf(previousYear), vista[0].yearCombo.getSelectedItem());
+            assertEquals(previousYear + "-1", vista[0].selectedSemesterKey);
+            assertEquals(1, vista[0].visibleRows.size());
+        });
+    }
+
+    @Test
+    void testAnioElegidoPorElUsuarioSeConservaAlRecargar() throws Exception {
+        Assumptions.assumeFalse(GraphicsEnvironment.isHeadless());
+        DatabaseConnection.setDbFilePath(tempDir.resolve("test_ui_manual.db").toString());
+        AppServices services = new AppServices();
+        int currentYear = Periodo.yearOf(Periodo.current());
+        String chosenYear = String.valueOf(currentYear - 2);
+
+        SeguimientoView[] vista = new SeguimientoView[1];
+        SwingUtilities.invokeAndWait(() -> {
+            prepararTema();
+            vista[0] = new SeguimientoView(services);
+            vista[0].yearCombo.setSelectedItem(chosenYear);
+        });
+
+        crearEvidenciaActiva(services, "Evidencia del año anterior", currentYear - 1, (currentYear - 1) + "-2");
+
+        SwingUtilities.invokeAndWait(() -> {
+            vista[0].reload();
+            assertEquals(chosenYear, vista[0].yearCombo.getSelectedItem());
+            assertTrue(vista[0].visibleRows.isEmpty());
+        });
+    }
+
+    @Test
+    void testFiltrosRecarganCatalogoConservandoSeleccionesValidas() throws Exception {
+        Assumptions.assumeFalse(GraphicsEnvironment.isHeadless());
+        DatabaseConnection.setDbFilePath(tempDir.resolve("test_ui_catalogo.db").toString());
+        AppServices services = new AppServices();
+        String tipoOriginal = services.catalogo.getAllTypes().get(0).getNombreTipoEvidencia();
+        int idTipoOriginal = services.catalogo.getAllTypes().get(0).getIdTipoEvidencia();
+
+        FiltrosPanel[] panel = new FiltrosPanel[1];
+        SwingUtilities.invokeAndWait(() -> {
+            prepararTema();
+            panel[0] = new FiltrosPanel(services, null, null);
+            panel[0].typeCombo.setSelectedItem(tipoOriginal);
+            panel[0].statusCombo.setSelectedItem("Entregado");
+            panel[0].onApply();
+        });
+
+        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + DatabaseConnection.getDbFilePath());
+             Statement stmt = conn.createStatement()) {
+            stmt.execute("INSERT INTO Estatus (NombreEstatus) VALUES ('Revisado')");
+            stmt.execute("UPDATE TipoEvidencia SET NombreTipoEvidencia = 'Tipo renombrado' "
+                    + "WHERE IdTipoEvidencia = " + idTipoOriginal);
+        }
+
+        SwingUtilities.invokeAndWait(() -> {
+            panel[0].reloadCatalog();
+            assertTrue(contieneElemento(panel[0].statusCombo, "Revisado"));
+            assertTrue(contieneElemento(panel[0].typeCombo, "Tipo renombrado"));
+            assertEquals("Entregado", panel[0].statusCombo.getSelectedItem());
+            assertEquals("Entregado", panel[0].getAppliedFilter().status());
+            // El tipo elegido ya no existe con ese nombre: vuelve a "Todos"
+            assertEquals(FiltrosPanel.ALL, panel[0].typeCombo.getSelectedItem());
+            assertEquals(FiltrosPanel.ALL, panel[0].getAppliedFilter().type());
+        });
+    }
+
+    @Test
+    void testControlesNoSeEnciman1024ConFiltrosAbiertos() throws Exception {
+        Assumptions.assumeFalse(GraphicsEnvironment.isHeadless());
+        DatabaseConnection.setDbFilePath(tempDir.resolve("test_ui_layout.db").toString());
+        AppServices services = new AppServices();
+        int currentYear = Periodo.yearOf(Periodo.current());
+        crearEvidenciaActiva(services, "Evidencia visible", currentYear, currentYear + "-2");
+
+        SwingUtilities.invokeAndWait(() -> {
+            prepararTema();
+            SeguimientoView view = new SeguimientoView(services);
+            int sidebarWidth = UIManager.getInt("Sidebar.width");
+            view.setSize(1024 - sidebarWidth, 640);
+            view.toggleFilters();
+            acomodarTodo(view);
+
+            Rectangle tabs = SwingUtilities.convertRectangle(view.tabsPanel.getParent(), view.tabsPanel.getBounds(), view);
+            Rectangle stats = SwingUtilities.convertRectangle(view.statsBar.getParent(), view.statsBar.getBounds(), view);
+            assertFalse(tabs.intersects(stats));
+
+            // El combo de año queda dentro de su fila
+            Container toolbar = view.yearCombo.getParent();
+            Rectangle year = view.yearCombo.getBounds();
+            assertTrue(year.width > 0 && year.x + year.width <= toolbar.getWidth());
+            assertTrue(year.y + year.height <= toolbar.getHeight());
+
+            // La tabla se desplaza en horizontal en lugar de aplastar las columnas
+            assertFalse(view.table.getScrollableTracksViewportWidth());
+            assertTrue(view.table.getColumnModel().getColumn(8).getWidth() >= 130);
+        });
+    }
+
+    private void acomodarTodo(Container container) {
+        container.doLayout();
+        for (Component child : container.getComponents()) {
+            if (child instanceof Container) {
+                acomodarTodo((Container) child);
+            }
+        }
+    }
+
+    private boolean contieneElemento(JComboBox<String> combo, String valor) {
+        for (int i = 0; i < combo.getItemCount(); i++) {
+            if (valor.equals(combo.getItemAt(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void prepararTema() {
+        FlatLaf.registerCustomDefaultsSource("theme");
+        FlatLightLaf.setup();
     }
 
     private Evidencia crearEvidenciaActiva(AppServices services, String titulo, int anio, String periodo)

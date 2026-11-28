@@ -42,7 +42,8 @@ public class Sidebar extends JPanel {
         welcome.setForeground(UIManager.getColor("Text.secondaryForeground"));
         welcome.putClientProperty("FlatLaf.style", "font: size: 12");
 
-        JLabel greeting = new JLabel("<html>Gestión de producción y evidencias</html>");
+        // Salto de línea fijo: un JLabel HTML en BoxLayout no se ajusta solo al ancho de la barra
+        JLabel greeting = new JLabel("<html>Gestión de producción<br>y evidencias</html>");
         greeting.setForeground(UIManager.getColor("Text.tertiaryForeground"));
         greeting.putClientProperty("FlatLaf.style", "font: size: 12");
 

@@ -54,7 +54,9 @@ public class MainWindow {
             seguimientoView.reload();
             alertasPanel.refresh();
         });
+        // Plan Académico también se recarga para no editar después una copia vieja del registro
         seguimientoView.setOnDataChanged(() -> {
+            planView.reload();
             alertasPanel.refresh();
         });
         ajustesView.setOnDataChanged(() -> {

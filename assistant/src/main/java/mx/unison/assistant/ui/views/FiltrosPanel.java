@@ -2,8 +2,10 @@ package mx.unison.assistant.ui.views;
 
 import java.awt.*;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import javax.swing.*;
@@ -58,19 +60,7 @@ public class FiltrosPanel extends JPanel {
         typeCombo.setPrototypeDisplayValue("Tipo seleccionado");
 
         periodCombo.addItem(ALL);
-        typeCombo.addItem(ALL);
-        statusCombo.addItem(ALL);
-        try {
-            for (TipoEvidencia t : services.catalogo.getAllTypes()) {
-                typeCombo.addItem(t.getNombreTipoEvidencia());
-            }
-            for (Estatus st : services.catalogo.getStatuses()) {
-                statusCombo.addItem(st.getNombreEstatus());
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-            JOptionPane.showMessageDialog(this, "No se pudieron cargar los filtros del catálogo.", "Error", JOptionPane.ERROR_MESSAGE);
-        }
+        reloadCatalog();
 
         setLayout(new BorderLayout());
         setPreferredSize(new Dimension(230, 0));
@@ -139,6 +129,45 @@ public class FiltrosPanel extends JPanel {
         footer.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, UIManager.getColor("Panel.borderColor")));
         footer.add(Ui.secondaryButton("Limpiar filtros", () -> onClearAll()));
         return footer;
+    }
+
+    // Vuelve a leer tipos y estatus del catálogo (por ejemplo, después de restaurarlo en Ajustes).
+    // Las selecciones que siguen existiendo se conservan; las demás vuelven a "Todos"
+    public void reloadCatalog() {
+        List<String> typeNames = new ArrayList<>();
+        List<String> statusNames = new ArrayList<>();
+        try {
+            for (TipoEvidencia t : services.catalogo.getAllTypes()) {
+                typeNames.add(t.getNombreTipoEvidencia());
+            }
+            for (Estatus st : services.catalogo.getStatuses()) {
+                statusNames.add(st.getNombreEstatus());
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "No se pudieron cargar los filtros del catálogo.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        String selectedType = fillComboKeepingSelection(typeCombo, typeNames);
+        String selectedStatus = fillComboKeepingSelection(statusCombo, statusNames);
+        String appliedType = typeNames.contains(appliedCriteria.type()) ? appliedCriteria.type() : ALL;
+        String appliedStatus = statusNames.contains(appliedCriteria.status()) ? appliedCriteria.status() : ALL;
+        appliedCriteria = new FilterCriteria(appliedCriteria.period(), appliedType, appliedStatus,
+            appliedCriteria.maxScore(), appliedCriteria.fileCount(), appliedCriteria.fileType());
+        typeCombo.setSelectedItem(selectedType);
+        statusCombo.setSelectedItem(selectedStatus);
+    }
+
+    // Regresa la selección que debe quedar: la anterior si sigue en la lista, o "Todos"
+    private static String fillComboKeepingSelection(JComboBox<String> combo, List<String> names) {
+        String previousSelection = selectedOrDefault(combo, ALL);
+        combo.removeAllItems();
+        combo.addItem(ALL);
+        for (String name : names) {
+            combo.addItem(name);
+        }
+        return names.contains(previousSelection) ? previousSelection : ALL;
     }
 
     public void setAvailablePeriods(Collection<String> periods) {

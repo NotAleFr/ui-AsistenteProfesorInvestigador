@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import javax.swing.*;
 
 import mx.unison.assistant.model.Categoria;
@@ -30,6 +31,7 @@ public class PlanAcademicoView extends JPanel {
     JButton activatePlanButton;
     JButton saveDraftButton;
     JButton deletePlanButton;
+    JPanel categoriesList = new JPanel();
     Map<Integer, CategorySection> sections = new LinkedHashMap<>();
     Map<Integer, Categoria> categoriesById = new LinkedHashMap<>();
     Map<Integer, List<Evidencia>> recordsByCategory = new LinkedHashMap<>();
@@ -59,6 +61,8 @@ public class PlanAcademicoView extends JPanel {
     }
 
     public void reload() {
+        // Si Ajustes restauró el catálogo, las secciones deben coincidir con las categorías actuales
+        refreshCategorySections();
         loadPlans();
     }
 
@@ -96,6 +100,8 @@ public class PlanAcademicoView extends JPanel {
         left.add(Ui.field("Periodo", periodValue));
         left.add(Box.createHorizontalStrut(32));
         left.add(Ui.field("Estado", planStatusSlot));
+        // Ui.field fija el ancho del espacio vacío; se ajusta al badge más ancho para que no se corte
+        planStatusSlot.setPreferredSize(new Dimension(widestPlanBadgeWidth(), 34));
 
         addRecordButton = Ui.primaryButton("Añadir Registro", () -> onAddRecord());
 
@@ -109,21 +115,20 @@ public class PlanAcademicoView extends JPanel {
         return toolbar;
     }
 
+    private static int widestPlanBadgeWidth() {
+        int activeWidth = StatusBadge.forPlanState(true).getPreferredSize().width;
+        int draftWidth = StatusBadge.forPlanState(false).getPreferredSize().width;
+        return Math.max(activeWidth, draftWidth);
+    }
+
     // Una sección (tabla) por cada categoría del catálogo (RF-02)
     private JScrollPane createCategoriesScroll() {
-        JPanel list = new JPanel();
-        list.setLayout(new BoxLayout(list, BoxLayout.Y_AXIS));
-        list.setBackground(Color.WHITE);
-        list.setBorder(BorderFactory.createEmptyBorder(16, 0, 16, 8));
+        categoriesList.setLayout(new BoxLayout(categoriesList, BoxLayout.Y_AXIS));
+        categoriesList.setBackground(Color.WHITE);
+        categoriesList.setBorder(BorderFactory.createEmptyBorder(16, 0, 16, 8));
 
         try {
-            List<Categoria> categories = services.catalogo.getCategories();
-            for (int i = 0; i < categories.size(); i++) {
-                Categoria cat = categories.get(i);
-                categoriesById.put(cat.getIdCategoria(), cat);
-                recordsByCategory.put(cat.getIdCategoria(), new ArrayList<>());
-                addSection(list, cat, Ui.categoryColor(i));
-            }
+            buildCategorySections(services.catalogo.getCategories());
         } catch (SQLException e) {
             e.printStackTrace();
             showDbError("No se pudieron cargar las categorías.");
@@ -132,12 +137,58 @@ public class PlanAcademicoView extends JPanel {
         // Se mete en NORTH para que las tablas no se estiren con espacio blanco vacío
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.setBackground(Color.WHITE);
-        wrapper.add(list, BorderLayout.NORTH);
+        wrapper.add(categoriesList, BorderLayout.NORTH);
 
         JScrollPane scroll = new JScrollPane(wrapper);
         scroll.setBorder(null);
         scroll.getVerticalScrollBar().setUnitIncrement(16);
         return scroll;
+    }
+
+    private void buildCategorySections(List<Categoria> categories) {
+        categoriesList.removeAll();
+        sections.clear();
+        categoriesById.clear();
+        recordsByCategory.clear();
+        for (int i = 0; i < categories.size(); i++) {
+            Categoria cat = categories.get(i);
+            categoriesById.put(cat.getIdCategoria(), cat);
+            recordsByCategory.put(cat.getIdCategoria(), new ArrayList<>());
+            addSection(categoriesList, cat, Ui.categoryColor(i));
+        }
+        categoriesList.revalidate();
+        categoriesList.repaint();
+    }
+
+    private void refreshCategorySections() {
+        try {
+            List<Categoria> categories = services.catalogo.getCategories();
+            if (!sameCategories(categories)) {
+                buildCategorySections(categories);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            showDbError("No se pudieron cargar las categorías.");
+        }
+    }
+
+    // Compara ID, nombre y orden con las secciones que ya se muestran
+    private boolean sameCategories(List<Categoria> categories) {
+        if (categories.size() != categoriesById.size()) {
+            return false;
+        }
+        int index = 0;
+        for (Categoria shownCategory : categoriesById.values()) {
+            Categoria category = categories.get(index);
+            boolean sameId = category.getIdCategoria() == shownCategory.getIdCategoria();
+            boolean sameName = String.valueOf(category.getNombreCategoria())
+                .equals(String.valueOf(shownCategory.getNombreCategoria()));
+            if (!sameId || !sameName) {
+                return false;
+            }
+            index++;
+        }
+        return true;
     }
 
     private void addSection(JPanel parent, Categoria category, Color color) {
@@ -284,7 +335,8 @@ public class PlanAcademicoView extends JPanel {
         boolean hasPlan = currentPlan != null;
         addRecordButton.setEnabled(hasPlan);
         activatePlanButton.setEnabled(hasPlan && !currentPlan.isActivo());
-        saveDraftButton.setEnabled(hasPlan);
+        // Un plan activo ya no es borrador
+        saveDraftButton.setEnabled(hasPlan && !currentPlan.isActivo());
         deletePlanButton.setEnabled(hasPlan);
 
         planStatusSlot.removeAll();
@@ -338,7 +390,11 @@ public class PlanAcademicoView extends JPanel {
             return;
         }
 
-        Evidencia selectedRecord = catRecords.get(row);
+        // Se lee de nuevo de la BD porque Seguimiento pudo cambiar el registro
+        Evidencia selectedRecord = loadFreshRecord(catRecords.get(row).getIdEvidencia());
+        if (selectedRecord == null) {
+            return;
+        }
         RegistroDialog dialog = new RegistroDialog(SwingUtilities.getWindowAncestor(this), services);
         dialog.fill(selectedRecord);
         dialog.setVisible(true);
@@ -363,6 +419,24 @@ public class PlanAcademicoView extends JPanel {
         }
     }
 
+    // Regresa null (y avisa) si el registro ya no existe o no se pudo leer
+    Evidencia loadFreshRecord(int idEvidencia) {
+        try {
+            Optional<Evidencia> savedRecord = services.evidencias.findById(idEvidencia);
+            if (savedRecord.isPresent()) {
+                return savedRecord.get();
+            }
+            Ui.info(this, "Aviso", "El registro ya no existe. Se actualizará la lista.");
+            if (currentPlan != null) {
+                loadRecords(currentPlan.getIdPlanAcademico());
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            showDbError("No se pudo cargar el registro.");
+        }
+        return null;
+    }
+
     public void onDeleteRecord(int idCategoria) {
         CategorySection section = sections.get(idCategoria);
         List<Evidencia> catRecords = recordsByCategory.get(idCategoria);
@@ -375,13 +449,14 @@ public class PlanAcademicoView extends JPanel {
         Evidencia selectedRecord = catRecords.get(row);
         if (Ui.confirm(this, "¿Deseas eliminar el registro seleccionado?")) {
             try {
-                services.planes.deleteRecord(selectedRecord.getIdEvidencia());
+                int undeletedFileCount = services.planes.deleteRecord(selectedRecord.getIdEvidencia());
                 if (currentPlan != null) {
                     loadRecords(currentPlan.getIdPlanAcademico());
                 }
                 if (onDataChanged != null) {
                     onDataChanged.run();
                 }
+                warnUndeletedFiles(undeletedFileCount);
             } catch (SQLException e) {
                 e.printStackTrace();
                 showDbError("No se pudo eliminar el registro.");
@@ -429,16 +504,29 @@ public class PlanAcademicoView extends JPanel {
         }
         if (Ui.confirm(this, "¿Deseas eliminar \"" + currentPlan.getNombrePlan() + "\" junto con todos sus registros?")) {
             try {
-                services.planes.deletePlan(currentPlan.getIdPlanAcademico());
+                int undeletedFileCount = services.planes.deletePlan(currentPlan.getIdPlanAcademico());
                 loadPlans();
                 if (onDataChanged != null) {
                     onDataChanged.run();
                 }
+                warnUndeletedFiles(undeletedFileCount);
             } catch (SQLException e) {
                 e.printStackTrace();
                 showDbError("No se pudo eliminar el plan.");
             }
         }
+    }
+
+    private void warnUndeletedFiles(int undeletedFileCount) {
+        if (undeletedFileCount > 0) {
+            Ui.info(this, "Archivos adjuntos", undeletedFileMessage(undeletedFileCount));
+        }
+    }
+
+    static String undeletedFileMessage(int undeletedFileCount) {
+        return "Se eliminó la información, pero " + undeletedFileCount + " archivo(s) adjunto(s) no se pudieron "
+            + "borrar del disco (pueden estar abiertos en otro programa o sin permisos). Ciérralos y bórralos de "
+            + "la carpeta de adjuntos si ya no los necesitas.";
     }
 
     private void showDbError(String message) {

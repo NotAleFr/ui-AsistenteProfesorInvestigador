@@ -19,7 +19,10 @@ public class PageHeader extends JPanel {
         actionsPanel.setLayout(new GridBagLayout());
         actionsPanel.setOpaque(false);
 
-        add(titleLabel, BorderLayout.WEST);
+        // En CENTER el título usa solo el espacio libre: si la ventana se angosta se recorta con "..."
+        // en lugar de encimarse con los botones de la derecha
+        titleLabel.setToolTipText(title);
+        add(titleLabel, BorderLayout.CENTER);
         add(actionsPanel, BorderLayout.EAST);
     }
 

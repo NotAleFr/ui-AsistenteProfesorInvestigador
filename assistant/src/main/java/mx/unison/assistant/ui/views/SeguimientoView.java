@@ -5,9 +5,12 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
 import java.sql.SQLException;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import javax.swing.*;
@@ -32,6 +35,9 @@ public class SeguimientoView extends JPanel {
 
     private static final String TABLE_CARD = "TABLE";
     private static final String EMPTY_CARD = "EMPTY";
+    private static final String NO_SCORE = "—";
+    private static final int SCORE_COLUMN = 5;
+    private static final int TABLE_MIN_FIT_WIDTH = 820;
 
     final AppServices services;
 
@@ -50,6 +56,8 @@ public class SeguimientoView extends JPanel {
     List<Evidencia> visibleRows = new ArrayList<>();
     String selectedSemesterKey = null;
     boolean updatingYears = false;
+    // true cuando el usuario ya eligió un año o semestre; antes de eso la vista sigue a los datos
+    boolean periodChosenByUser = false;
     Runnable onDataChanged;
 
     public SeguimientoView(AppServices services) {
@@ -64,12 +72,13 @@ public class SeguimientoView extends JPanel {
         PageHeader header = new PageHeader("Seguimiento de evidencias");
         header.addAction(Ui.primaryButton("Generar Concentrado", () -> onGenerateSummary()));
 
-        // Toolbar + StatsBar + Tabs en filas limpias para que nunca se encimen al abrir Filtros
+        // Toolbar, StatsBar y pestañas en filas separadas para que no se encimen al abrir Filtros a 1024 px
         JPanel controls = new JPanel();
         controls.setLayout(new BoxLayout(controls, BoxLayout.Y_AXIS));
         controls.setOpaque(false);
         controls.add(createToolbar());
-        controls.add(createTabsAndStatsRow());
+        controls.add(createStatsRow());
+        controls.add(createTabsRow());
 
         JPanel north = new JPanel(new BorderLayout());
         north.setOpaque(false);
@@ -92,8 +101,8 @@ public class SeguimientoView extends JPanel {
         reload();
     }
 
-    private void loadYears() {
-        String previousYear = (String) yearCombo.getSelectedItem();
+    private void loadYears(boolean useDefaultSelection) {
+        String previousYear = useDefaultSelection ? null : (String) yearCombo.getSelectedItem();
         int currentCalendarYear = Periodo.yearOf(Periodo.current());
         Set<Integer> years = new TreeSet<>(Collections.reverseOrder());
         years.addAll(Periodo.recentYears());
@@ -150,7 +159,16 @@ public class SeguimientoView extends JPanel {
 
     public void reload() {
         loadRows();
-        loadYears();
+        if (allRows.isEmpty()) {
+            periodChosenByUser = false;
+        }
+        // Mientras el usuario no haya elegido año o semestre, la vista sigue al año/semestre con datos
+        boolean useDefaultSelection = !periodChosenByUser && !allRows.isEmpty();
+        if (useDefaultSelection) {
+            selectedSemesterKey = null;
+        }
+        loadYears(useDefaultSelection);
+        filtrosPanel.reloadCatalog();
         refreshFilterPeriodsForSelectedYear();
         rebuildSemesterTabs();
         filtrosPanel.setSelectedPeriod(selectedSemesterKey);
@@ -159,7 +177,10 @@ public class SeguimientoView extends JPanel {
 
     private void onSideFiltersChanged() {
         FiltrosPanel.FilterCriteria criteria = filtrosPanel.getAppliedFilter();
-        selectedSemesterKey = criteria.period();
+        if (!Objects.equals(criteria.period(), selectedSemesterKey)) {
+            periodChosenByUser = true;
+            selectedSemesterKey = criteria.period();
+        }
         rebuildSemesterTabs();
         applyFilter();
     }
@@ -182,7 +203,8 @@ public class SeguimientoView extends JPanel {
         toolbar.setOpaque(false);
         toolbar.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        searchField.setPreferredSize(new Dimension(210, 34));
+        // Ancho pensado para que el año siga visible a 1024 px con Filtros abierto
+        searchField.setPreferredSize(new Dimension(180, 34));
         searchField.putClientProperty("JTextField.placeholderText", "Buscar por título...");
         searchField.getDocument().addDocumentListener(new DocumentListener() {
             @Override
@@ -209,6 +231,7 @@ public class SeguimientoView extends JPanel {
         yearCombo.setPreferredSize(new Dimension(84, 34));
         yearCombo.addActionListener(e -> {
             if (!updatingYears) {
+                periodChosenByUser = true;
                 refreshFilterPeriodsForSelectedYear();
                 rebuildSemesterTabs();
                 filtrosPanel.setSelectedPeriod(selectedSemesterKey);
@@ -224,18 +247,26 @@ public class SeguimientoView extends JPanel {
         return toolbar;
     }
 
-    private JPanel createTabsAndStatsRow() {
-        JPanel row = new JPanel(new BorderLayout(12, 0));
+    private JPanel createStatsRow() {
+        JPanel row = new JPanel(new BorderLayout());
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setBorder(BorderFactory.createEmptyBorder(8, 0, 4, 0));
+        row.add(statsBar, BorderLayout.WEST);
+        return row;
+    }
+
+    private JPanel createTabsRow() {
+        JPanel row = new JPanel(new BorderLayout());
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
         row.setBorder(BorderFactory.createCompoundBorder(
             BorderFactory.createMatteBorder(0, 0, 1, 0, UIManager.getColor("Panel.borderColor")),
-            BorderFactory.createEmptyBorder(6, 0, 6, 0)
+            BorderFactory.createEmptyBorder(2, 0, 2, 0)
         ));
 
         tabsPanel.setOpaque(false);
         row.add(tabsPanel, BorderLayout.WEST);
-        row.add(statsBar, BorderLayout.EAST);
         return row;
     }
 
@@ -254,6 +285,7 @@ public class SeguimientoView extends JPanel {
                 tab.setSelected(true);
             }
             tab.addActionListener(e -> {
+                periodChosenByUser = true;
                 selectedSemesterKey = tabKey;
                 filtrosPanel.setSelectedPeriod(tabKey);
                 applyFilter();
@@ -324,15 +356,33 @@ public class SeguimientoView extends JPanel {
             }
         };
 
-        table = new JTable(tableModel);
+        // Llena el ancho a partir de un tamaño legible (1280x720 sin filtros); en anchos chicos usa scroll horizontal
+        table = new JTable(tableModel) {
+            @Override
+            public boolean getScrollableTracksViewportWidth() {
+                Container viewport = getParent();
+                return viewport != null && viewport.getWidth() >= TABLE_MIN_FIT_WIDTH;
+            }
+        };
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_SUBSEQUENT_COLUMNS);
         table.getTableHeader().setReorderingAllowed(false);
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         table.setDefaultRenderer(Object.class, Ui.tooltipCellRenderer());
 
-        int[] widths = { 190, 95, 180, 70, 90, 65, 105, 105, 115 };
+        int[] widths = { 190, 95, 180, 70, 90, 65, 105, 105, 130 };
         for (int i = 0; i < widths.length; i++) {
             table.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
         }
+        // "Dar seguimiento" no se corta aunque la tabla se angoste
+        table.getColumnModel().getColumn(8).setMinWidth(widths[8]);
+
+        // El modelo guarda el puntaje como número; solo la celda muestra la raya si no hay opción
+        DefaultTableCellRenderer scoreRenderer = Ui.tooltipCellRenderer();
+        table.getColumnModel().getColumn(SCORE_COLUMN).setCellRenderer((tbl, value, isSelected, hasFocus, row, column) -> {
+            int modelRow = tbl.convertRowIndexToModel(row);
+            Object shownValue = modelRow < visibleRows.size() ? formatScore(visibleRows.get(modelRow)) : value;
+            return scoreRenderer.getTableCellRendererComponent(tbl, shownValue, isSelected, hasFocus, row, column);
+        });
 
         table.getColumnModel().getColumn(6).setCellRenderer((tbl, value, isSelected, hasFocus, row, column) -> {
             return badgeCell(StatusBadge.forStatus(String.valueOf(value)), tbl, isSelected);
@@ -377,6 +427,10 @@ public class SeguimientoView extends JPanel {
         scroll.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
         scroll.getViewport().setBackground(Color.WHITE);
         return scroll;
+    }
+
+    static String formatScore(Evidencia item) {
+        return item.getIdOpcion() > 0 ? String.valueOf(item.getPuntajeOpcion()) : NO_SCORE;
     }
 
     private JPanel createEmptyStatePanel() {
@@ -446,7 +500,7 @@ public class SeguimientoView extends JPanel {
     }
 
     public void applyFilter() {
-        String query = searchField.getText().trim().toLowerCase();
+        String query = normalizeForSearch(searchField.getText().trim());
         String toolbarYear = getSelectedYear();
         FiltrosPanel.FilterCriteria criteria = filtrosPanel.getAppliedFilter();
 
@@ -461,7 +515,7 @@ public class SeguimientoView extends JPanel {
 
     static boolean matchesFilters(
             Evidencia item,
-            String queryLower,
+            String normalizedQuery,
             String toolbarYear,
             FiltrosPanel.FilterCriteria criteria) {
         String title = item.getTitulo() != null ? item.getTitulo() : "";
@@ -470,7 +524,7 @@ public class SeguimientoView extends JPanel {
         String status = item.getNombreEstatus() != null ? item.getNombreEstatus() : "";
         List<Documento> docs = item.getDocumentos() != null ? item.getDocumentos() : List.of();
 
-        if (!queryLower.isEmpty() && !title.toLowerCase().contains(queryLower)) {
+        if (!normalizedQuery.isEmpty() && !normalizeForSearch(title).contains(normalizedQuery)) {
             return false;
         }
         if (toolbarYear != null && !period.startsWith(toolbarYear + "-")) {
@@ -498,6 +552,22 @@ public class SeguimientoView extends JPanel {
             return false;
         }
         return true;
+    }
+
+    // Minúsculas y sin acentos, para que "investigacion" encuentre "Investigación"
+    static String normalizeForSearch(String text) {
+        if (text == null) {
+            return "";
+        }
+        String decomposed = Normalizer.normalize(text, Normalizer.Form.NFD);
+        StringBuilder withoutAccents = new StringBuilder(decomposed.length());
+        for (int i = 0; i < decomposed.length(); i++) {
+            char character = decomposed.charAt(i);
+            if (Character.getType(character) != Character.NON_SPACING_MARK) {
+                withoutAccents.append(character);
+            }
+        }
+        return withoutAccents.toString().toLowerCase(Locale.ROOT);
     }
 
     private static boolean hasFileWithExtension(List<Documento> docs, String extension) {
