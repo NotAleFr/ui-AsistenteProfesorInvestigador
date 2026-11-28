@@ -108,4 +108,11 @@ public class Sidebar extends JPanel {
             alertsTile.setSelected(selected);
         }
     }
+
+    public void setAlertCount(int count) {
+        if (alertsTile != null) {
+            String baseLabel = Section.ALERTS.getLabel();
+            alertsTile.setText(count > 0 ? baseLabel + " (" + count + ")" : baseLabel);
+        }
+    }
 }

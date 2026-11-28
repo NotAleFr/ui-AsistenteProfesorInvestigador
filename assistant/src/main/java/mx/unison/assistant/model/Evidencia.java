@@ -34,6 +34,7 @@ public class Evidencia {
     private double puntajeOpcion;
     private String nombreEstatus;
     private String nombreAcreditacion;
+    private boolean planActivo;
     private List<Documento> documentos = new ArrayList<>();
 
     public Evidencia() {
@@ -205,6 +206,14 @@ public class Evidencia {
 
     public void setNombreAcreditacion(String nombreAcreditacion) {
         this.nombreAcreditacion = nombreAcreditacion;
+    }
+
+    public boolean isPlanActivo() {
+        return planActivo;
+    }
+
+    public void setPlanActivo(boolean planActivo) {
+        this.planActivo = planActivo;
     }
 
     public List<Documento> getDocumentos() {

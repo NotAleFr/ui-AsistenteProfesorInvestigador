@@ -8,14 +8,17 @@ import java.util.List;
 import mx.unison.assistant.data.AlertaDAO;
 import mx.unison.assistant.data.EvidenciaDAO;
 import mx.unison.assistant.model.Alerta;
+import mx.unison.assistant.model.AlertaItem;
+import mx.unison.assistant.model.AlertaItem.Regla;
 import mx.unison.assistant.model.Documento;
 import mx.unison.assistant.model.Evidencia;
+import mx.unison.assistant.model.Fechas;
 import mx.unison.assistant.model.Periodo;
+import mx.unison.assistant.model.RecordatorioItem;
 
 /**
  * Servicio de evaluación de reglas de negocio para la Bandeja de Notificaciones
- * y Seguimiento de Pendientes (RF-19, RF-20).
- * Reemplaza {@code SampleData.checkAlerts()}.
+ * y Seguimiento de Pendientes (RF-19, RF-20, RF-21).
  */
 public class AlertaService {
 
@@ -27,41 +30,83 @@ public class AlertaService {
         this.alertaDAO = alertaDAO;
     }
 
-    public List<String> getStartupReminders() throws SQLException {
-        return getStartupReminders(LocalDate.now());
+    public List<RecordatorioItem> getStartupReminderItems() throws SQLException {
+        return getStartupReminderItems(LocalDate.now());
     }
 
-    public List<String> getStartupReminders(LocalDate today) throws SQLException {
-        List<String> reminders = new ArrayList<>();
-        String previousPeriod = Periodo.isPeriodStart(today) ? Periodo.previous(Periodo.of(today)) : null;
+    public List<RecordatorioItem> getStartupReminderItems(LocalDate today) throws SQLException {
+        List<RecordatorioItem> items = new ArrayList<>();
+        String currentPeriod = Periodo.of(today);
+        String previousPeriod = Periodo.isPeriodStart(today) ? Periodo.previous(currentPeriod) : null;
         LocalDate tomorrow = today.plusDays(1);
-        int previousPeriodPendingCount = 0;
-        int dueWithin24HoursCount = 0;
+
+        List<Evidencia> previousPeriodPending = new ArrayList<>();
+        List<Evidencia> currentPeriodOpen = new ArrayList<>();
+        List<Evidencia> dueWithin24Hours = new ArrayList<>();
+
         for (Evidencia evidencia : evidenciaDAO.findActive()) {
-            if (!"Pendiente".equalsIgnoreCase(evidencia.getNombreEstatus())) {
-                continue;
+            String estatus = evidencia.getNombreEstatus() != null ? evidencia.getNombreEstatus() : "";
+            boolean isPending = "Pendiente".equalsIgnoreCase(estatus);
+            boolean isOpen = !"Entregado".equalsIgnoreCase(estatus);
+
+            if (isPending && previousPeriod != null && previousPeriod.equals(evidencia.getPeriodo())) {
+                previousPeriodPending.add(evidencia);
             }
-            if (previousPeriod != null && previousPeriod.equals(evidencia.getPeriodo())) {
-                previousPeriodPendingCount++;
+            if (isOpen && currentPeriod.equals(evidencia.getPeriodo())) {
+                currentPeriodOpen.add(evidencia);
             }
-            if (isDueWithin24Hours(evidencia.getFechaFinalizacion(), today, tomorrow)) {
-                dueWithin24HoursCount++;
+            if (isPending && isDueWithin24Hours(evidencia.getFechaFinalizacion(), today, tomorrow)) {
+                dueWithin24Hours.add(evidencia);
             }
         }
-        if (previousPeriodPendingCount > 0) {
-            reminders.add("Hay " + previousPeriodPendingCount + " evidencia(s) pendiente(s) del periodo anterior ("
-                    + previousPeriod + ").");
+
+        if (!dueWithin24Hours.isEmpty()) {
+            items.add(new RecordatorioItem(
+                    "Vence pronto",
+                    "Evidencias con fecha límite hoy o mañana",
+                    "Tienes " + dueWithin24Hours.size() + " evidencia(s) pendiente(s) por vencer en las próximas 24 horas.",
+                    true,
+                    dueWithin24Hours
+            ));
+        }
+        if (!previousPeriodPending.isEmpty()) {
+            items.add(new RecordatorioItem(
+                    "Inicio de periodo",
+                    "Pendientes del periodo anterior (" + previousPeriod + ")",
+                    "Tienes " + previousPeriodPending.size() + " evidencia(s) pendiente(s) del periodo " + previousPeriod + ".",
+                    false,
+                    previousPeriodPending
+            ));
         }
         if (Periodo.isMidPeriod(today)) {
-            reminders.add("A mitad del periodo, sube las evidencias de tus actividades recientes.");
+            String detail = currentPeriodOpen.isEmpty()
+                    ? "A mitad del periodo " + currentPeriod + ", sube las evidencias de tus actividades recientes."
+                    : "Tienes " + currentPeriodOpen.size() + " actividad(es) abiertas en " + currentPeriod
+                            + ". Sube las evidencias de tus actividades recientes.";
+            items.add(new RecordatorioItem(
+                    "Mitad de periodo",
+                    "Avance del periodo " + currentPeriod,
+                    detail,
+                    false,
+                    currentPeriodOpen
+            ));
         }
         if (Periodo.isPeriodEnd(today)) {
-            reminders.add("Entrega las evidencias de las actividades que finalizan en este periodo.");
+            String periodEndDate = Fechas.toScreen(Periodo.endOf(currentPeriod));
+            String detail = currentPeriodOpen.isEmpty()
+                    ? "El periodo " + currentPeriod + " cierra el " + periodEndDate
+                            + ". Verifica que todas tus evidencias estén entregadas."
+                    : "El periodo " + currentPeriod + " cierra el " + periodEndDate + " y tienes "
+                            + currentPeriodOpen.size() + " evidencia(s) sin entregar.";
+            items.add(new RecordatorioItem(
+                    "Cierre de periodo",
+                    "Cierre del periodo " + currentPeriod,
+                    detail,
+                    false,
+                    currentPeriodOpen
+            ));
         }
-        if (dueWithin24HoursCount > 0) {
-            reminders.add("Hay " + dueWithin24HoursCount + " evidencia(s) pendiente(s) con fecha límite hoy o mañana.");
-        }
-        return reminders;
+        return items;
     }
 
     private boolean isDueWithin24Hours(String endDateText, LocalDate today, LocalDate tomorrow) {
@@ -78,119 +123,137 @@ public class AlertaService {
 
     /**
      * Inspecciona todas las evidencias en la base de datos bajo las 4 reglas del RF-19,
-     * persiste las alertas activas en {@code Alertas} y devuelve los mensajes generados.
-     *
-     * @return lista de mensajes de alerta activos.
-     * @throws SQLException si ocurre un error SQL.
+     * persiste los resúmenes activos en {@code Alertas} y devuelve los mensajes generados.
      */
     public List<String> checkAlerts() throws SQLException {
-        List<Evidencia> evidencias = evidenciaDAO.findAll();
-        List<String> alerts = new ArrayList<>();
-        String currentPeriod = Periodo.current();
+        return checkAlerts(Periodo.current());
+    }
 
+    public List<String> checkAlerts(String currentPeriod) throws SQLException {
+        List<AlertaItem> alertItems = getAlertItems(currentPeriod);
+        List<String> summaries = summarizeAlerts(alertItems, currentPeriod);
+        alertaDAO.replaceAll(summaries);
+        return summaries;
+    }
+
+    /**
+     * Evalúa las alertas individuales (RF-19) y sincroniza en el mismo paso los resúmenes
+     * persistidos en la tabla {@code Alertas}, evitando desfases entre bandeja y BD.
+     */
+    public List<AlertaItem> refreshAlertItems() throws SQLException {
+        return refreshAlertItems(Periodo.current());
+    }
+
+    public List<AlertaItem> refreshAlertItems(String currentPeriod) throws SQLException {
+        List<AlertaItem> alertItems = getAlertItems(currentPeriod);
+        alertaDAO.replaceAll(summarizeAlerts(alertItems, currentPeriod));
+        return alertItems;
+    }
+
+    private List<String> summarizeAlerts(List<AlertaItem> alertItems, String currentPeriod) {
         int sinDocumentosCount = 0;
-        int entregadosSinDocCount = 0;
-        int enProcesoCount = 0;
-        int pendientesPeriodoCount = 0;
         int formatoNoPrioritarioCount = 0;
+        int entregadosSinDocCount = 0;
+        int pendientesEnProcesoCount = 0;
 
-        for (Evidencia ev : evidencias) {
-            List<Documento> docs = ev.getDocumentos();
-            boolean hasDocs = docs != null && !docs.isEmpty();
-            String estatus = ev.getNombreEstatus() != null ? ev.getNombreEstatus() : "";
-
-            // Regla 1 (RF-19.1): Evidencias sin documentos probatorios adjuntos
-            if (!hasDocs) {
-                sinDocumentosCount++;
-            }
-
-            // Regla 2 (RF-19.2): Evidencias del periodo actual aún en Pendiente o En proceso
-            if (currentPeriod.equals(ev.getPeriodo())) {
-                if ("Pendiente".equalsIgnoreCase(estatus)) {
-                    pendientesPeriodoCount++;
-                } else if ("En proceso".equalsIgnoreCase(estatus)) {
-                    enProcesoCount++;
-                }
-            }
-
-            // Regla 3 (RF-19.3): Inconsistencia de cierre (Entregado sin archivo adjunto)
-            if ("Entregado".equalsIgnoreCase(estatus) && !hasDocs) {
-                entregadosSinDocCount++;
-            }
-
-            // Regla 4 (RF-19.4): Advertencia preventiva PEDPD (ningún archivo .pdf o .jpg)
-            if (hasDocs && !hasPdfOrJpg(docs)) {
-                formatoNoPrioritarioCount++;
+        for (AlertaItem item : alertItems) {
+            switch (item.regla()) {
+                case SIN_DOCUMENTOS -> sinDocumentosCount++;
+                case FORMATO_NO_PEDPD -> formatoNoPrioritarioCount++;
+                case ENTREGADO_SIN_DOC -> entregadosSinDocCount++;
+                case PENDIENTE_EN_PROCESO -> pendientesEnProcesoCount++;
             }
         }
 
+        List<String> alerts = new ArrayList<>();
         if (sinDocumentosCount > 0) {
             alerts.add("Cuenta con " + sinDocumentosCount + " registro(s) sin documento adjunto probatorio.");
         }
         if (formatoNoPrioritarioCount > 0) {
-            alerts.add("Hay " + formatoNoPrioritarioCount + " evidencia(s) sin archivo prioritario (.pdf o .jpg) requerido por el PEDPD.");
+            alerts.add("Hay " + formatoNoPrioritarioCount
+                    + " evidencia(s) sin archivo prioritario (.pdf o .jpg) requerido por el PEDPD.");
         }
         if (entregadosSinDocCount > 0) {
-            alerts.add("Hay " + entregadosSinDocCount + " evidencia(s) con estatus \"Entregado\" sin documentos probatorios adjuntos.");
+            alerts.add("Hay " + entregadosSinDocCount
+                    + " evidencia(s) con estatus \"Entregado\" sin documentos probatorios adjuntos.");
         }
-        if (pendientesPeriodoCount > 0) {
-            alerts.add("Hay " + pendientesPeriodoCount + " evidencia(s) del periodo actual (" + currentPeriod + ") en estatus \"Pendiente\".");
+        if (pendientesEnProcesoCount > 0) {
+            alerts.add("Hay " + pendientesEnProcesoCount + " evidencia(s) del periodo actual ("
+                    + currentPeriod + ") aún en estatus \"Pendiente\" o \"En proceso\".");
         }
-        if (enProcesoCount > 0) {
-            alerts.add("Hay " + enProcesoCount + " evidencia(s) del periodo actual (" + currentPeriod + ") en estatus \"En proceso\".");
-        }
-
-        alertaDAO.replaceAll(alerts);
         return alerts;
     }
 
     /**
-     * Obtiene el detalle completo de alertas activas por evidencia individual (RF-20),
-     * indicando tipo de faltante, tipo de evidencia, periodo y extracto de descripción.
-     *
-     * @return lista detallada de alertas individuales.
-     * @throws SQLException si ocurre un error SQL.
+     * Fuente única de evaluación de las 4 reglas del RF-19 por evidencia individual.
      */
-    public List<String> getDetailedAlerts() throws SQLException {
+    public List<AlertaItem> getAlertItems() throws SQLException {
+        return getAlertItems(Periodo.current());
+    }
+
+    public List<AlertaItem> getAlertItems(String currentPeriod) throws SQLException {
         List<Evidencia> evidencias = evidenciaDAO.findAll();
-        List<String> detailed = new ArrayList<>();
-        String currentPeriod = Periodo.current();
+        List<AlertaItem> items = new ArrayList<>();
 
-        for (Evidencia ev : evidencias) {
-            List<Documento> docs = ev.getDocumentos();
+        for (Evidencia evidencia : evidencias) {
+            List<Documento> docs = evidencia.getDocumentos();
             boolean hasDocs = docs != null && !docs.isEmpty();
-            String estatus = ev.getNombreEstatus() != null ? ev.getNombreEstatus() : "";
-            String nota = (ev.getDescripcion() != null && !ev.getDescripcion().isBlank())
-                    ? " — Nota: " + ev.getDescripcion()
-                    : "";
+            String estatus = evidencia.getNombreEstatus() != null ? evidencia.getNombreEstatus() : "";
+            String titulo = evidencia.getTitulo() != null ? evidencia.getTitulo() : "Evidencia sin título";
+            String periodo = evidencia.getPeriodo() != null ? evidencia.getPeriodo() : "";
 
+            // Regla 3 (RF-19.3) y Regla 1 (RF-19.1): sin documentos probatorios (sin doble conteo)
             if ("Entregado".equalsIgnoreCase(estatus) && !hasDocs) {
-                detailed.add("[Inconsistencia: Entregado sin documento] " + ev.getTitulo()
-                        + " (" + ev.getNombreTipoEvidencia() + " | " + ev.getPeriodo() + ")" + nota);
+                items.add(new AlertaItem(
+                        evidencia.getIdEvidencia(),
+                        evidencia.getIdPlanAcademico(),
+                        evidencia.isPlanActivo(),
+                        Regla.ENTREGADO_SIN_DOC,
+                        titulo,
+                        "Marcada como \"Entregado\" sin documentos adjuntos (" + periodo + ")."
+                ));
             } else if (!hasDocs) {
-                detailed.add("[Sin documento adjunto] " + ev.getTitulo()
-                        + " (" + ev.getNombreTipoEvidencia() + " | " + ev.getPeriodo() + ")" + nota);
+                items.add(new AlertaItem(
+                        evidencia.getIdEvidencia(),
+                        evidencia.getIdPlanAcademico(),
+                        evidencia.isPlanActivo(),
+                        Regla.SIN_DOCUMENTOS,
+                        titulo,
+                        "Sin documento probatorio adjunto (" + periodo + ")."
+                ));
             }
 
-            // Regla 2 del RF-19: solo las del periodo actual
-            if (currentPeriod.equals(ev.getPeriodo()) && !"Entregado".equalsIgnoreCase(estatus)) {
-                detailed.add("[Estatus: " + estatus + "] " + ev.getTitulo()
-                        + " (" + ev.getNombreTipoEvidencia() + " | " + ev.getPeriodo() + ")" + nota);
+            // Regla 2 (RF-19.2): evidencias del periodo actual aún en Pendiente o En proceso
+            boolean isPendingOrInProgress = "Pendiente".equalsIgnoreCase(estatus)
+                    || "En proceso".equalsIgnoreCase(estatus);
+            if (currentPeriod.equals(periodo) && isPendingOrInProgress) {
+                items.add(new AlertaItem(
+                        evidencia.getIdEvidencia(),
+                        evidencia.getIdPlanAcademico(),
+                        evidencia.isPlanActivo(),
+                        Regla.PENDIENTE_EN_PROCESO,
+                        titulo,
+                        "Aún en estatus \"" + estatus + "\" en el periodo actual (" + periodo + ")."
+                ));
             }
 
+            // Regla 4 (RF-19.4): sin archivo prioritario (.pdf o .jpg) requerido por el PEDPD
             if (hasDocs && !hasPdfOrJpg(docs)) {
-                detailed.add("[Falta formato PDF/JPG] " + ev.getTitulo()
-                        + " (" + ev.getNombreTipoEvidencia() + " | " + ev.getPeriodo() + ")" + nota);
+                items.add(new AlertaItem(
+                        evidencia.getIdEvidencia(),
+                        evidencia.getIdPlanAcademico(),
+                        evidencia.isPlanActivo(),
+                        Regla.FORMATO_NO_PEDPD,
+                        titulo,
+                        "Sin archivo prioritario (.pdf o .jpg) requerido por el PEDPD (" + periodo + ")."
+                ));
             }
         }
-        return detailed;
+        return items;
     }
 
     /**
      * Recupera los registros almacenados actualmente en la tabla {@code Alertas}.
-     *
-     * @return lista de entidades {@link Alerta}.
-     * @throws SQLException si ocurre un error SQL.
      */
     public List<Alerta> getStoredAlerts() throws SQLException {
         return alertaDAO.findAll();

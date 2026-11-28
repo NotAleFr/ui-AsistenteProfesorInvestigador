@@ -20,6 +20,7 @@ import mx.unison.assistant.data.DatabaseConnection;
 import mx.unison.assistant.data.DocumentoDAO;
 import mx.unison.assistant.data.EvidenciaDAO;
 import mx.unison.assistant.data.PlanAcademicoDAO;
+import mx.unison.assistant.model.AlertaItem;
 import mx.unison.assistant.model.Categoria;
 import mx.unison.assistant.model.Documento;
 import mx.unison.assistant.model.Estatus;
@@ -27,6 +28,7 @@ import mx.unison.assistant.model.Evidencia;
 import mx.unison.assistant.model.Opcion;
 import mx.unison.assistant.model.Periodo;
 import mx.unison.assistant.model.PlanAcademico;
+import mx.unison.assistant.model.RecordatorioItem;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -265,6 +267,65 @@ class BackendServicesTest {
     }
 
     @Test
+    void testAlertasIndividualesIncluyenEvidenciaYEstadoDelPlan() throws Exception {
+        PlanAcademico planBorrador = planService.createPlan("Borrador", 2026, "2026-2");
+        Evidencia evidenciaBorrador = planService.addRecord(nuevoRegistro(planBorrador));
+
+        Evidencia evidenciaEntregadaSinArchivo = registroEnSeguimiento();
+        evidenciaEntregadaSinArchivo.setIdEstatus(ESTATUS_ENTREGADO);
+        evidenciaService.updateTracking(evidenciaEntregadaSinArchivo, null, null);
+
+        Evidencia evidenciaSoloDocx = registroEnSeguimiento();
+        evidenciaSoloDocx.setIdEstatus(ESTATUS_ENTREGADO);
+        Path archivoDocx = tempDir.resolve("constancia.docx");
+        Files.writeString(archivoDocx, "documento word");
+        evidenciaService.updateTracking(evidenciaSoloDocx, List.of(archivoDocx.toFile()), null);
+
+        Evidencia evidenciaCompleta = registroEnSeguimiento();
+        evidenciaCompleta.setIdEstatus(ESTATUS_ENTREGADO);
+        evidenciaService.updateTracking(evidenciaCompleta, List.of(crearPdf("completa.pdf")), null);
+
+        List<AlertaItem> items = alertaService.getAlertItems("2026-2");
+
+        assertTrue(items.stream().anyMatch(item ->
+                item.idEvidencia() == evidenciaBorrador.getIdEvidencia()
+                        && item.idPlanAcademico() == planBorrador.getIdPlanAcademico()
+                        && !item.planActivo()
+                        && item.regla() == AlertaItem.Regla.SIN_DOCUMENTOS
+                        && item.clave().equals(evidenciaBorrador.getIdEvidencia() + ":SIN_DOCUMENTOS")
+                        && item.mensaje().contains("Sin documento")));
+        assertTrue(items.stream().anyMatch(item ->
+                item.idEvidencia() == evidenciaBorrador.getIdEvidencia()
+                        && item.regla() == AlertaItem.Regla.PENDIENTE_EN_PROCESO
+                        && item.mensaje().contains("Pendiente")));
+        assertTrue(items.stream().anyMatch(item ->
+                item.idEvidencia() == evidenciaEntregadaSinArchivo.getIdEvidencia()
+                        && item.planActivo()
+                        && item.regla() == AlertaItem.Regla.ENTREGADO_SIN_DOC
+                        && item.clave().equals(evidenciaEntregadaSinArchivo.getIdEvidencia() + ":ENTREGADO_SIN_DOC")
+                        && item.mensaje().contains("Entregado")));
+        assertTrue(items.stream().anyMatch(item ->
+                item.idEvidencia() == evidenciaSoloDocx.getIdEvidencia()
+                        && item.planActivo()
+                        && item.regla() == AlertaItem.Regla.FORMATO_NO_PEDPD
+                        && item.mensaje().contains(".pdf o .jpg")));
+        assertTrue(items.stream().noneMatch(item ->
+                item.idEvidencia() == evidenciaCompleta.getIdEvidencia()));
+
+        // checkAlerts() y refreshAlertItems() derivan de getAlertItems() y sincronizan la tabla Alertas
+        List<String> resumenAlertas = alertaService.checkAlerts("2026-2");
+        assertTrue(resumenAlertas.stream().anyMatch(msg -> msg.contains("1 registro(s) sin documento")));
+        assertTrue(resumenAlertas.stream().anyMatch(msg -> msg.contains("1 evidencia(s) sin archivo prioritario")));
+        assertTrue(resumenAlertas.stream().anyMatch(msg -> msg.contains("1 evidencia(s) con estatus \"Entregado\" sin documentos")));
+        assertTrue(resumenAlertas.stream().anyMatch(msg -> msg.contains("1 evidencia(s) del periodo actual (2026-2)")));
+
+        new AlertaDAO().replaceAll(List.of());
+        List<AlertaItem> refreshedItems = alertaService.refreshAlertItems("2026-2");
+        assertEquals(items.size(), refreshedItems.size());
+        assertEquals(resumenAlertas.size(), alertaService.getStoredAlerts().size());
+    }
+
+    @Test
     void testAlertasAnterioresSeConservanSiFallaElReemplazo() throws Exception {
         AlertaDAO alertaDAO = new AlertaDAO();
         alertaDAO.replaceAll(List.of("Alerta 1", "Alerta 2"));
@@ -382,21 +443,29 @@ class BackendServicesTest {
         agregarEvidencia("2026-1", true, ESTATUS_ENTREGADO, null);
         agregarEvidencia("2025-2", true, 1, null);
 
-        assertTrue(alertaService.getStartupReminders(LocalDate.of(2026, 7, 15)).isEmpty());
-        assertEquals(List.of("Hay 2 evidencia(s) pendiente(s) del periodo anterior (2026-1)."),
-                alertaService.getStartupReminders(LocalDate.of(2026, 8, 1)));
+        assertTrue(alertaService.getStartupReminderItems(LocalDate.of(2026, 7, 15)).isEmpty());
+
+        List<RecordatorioItem> items = alertaService.getStartupReminderItems(LocalDate.of(2026, 8, 1));
+        assertEquals(1, items.size());
+        assertEquals("Inicio de periodo", items.get(0).etiqueta());
+        assertEquals(2, items.get(0).evidencias().size());
+        assertTrue(items.get(0).detalle().contains("2 evidencia(s) pendiente(s) del periodo 2026-1"));
     }
 
     @Test
     void testRecordatorioDeMitadDePeriodo() throws Exception {
-        assertEquals(List.of("A mitad del periodo, sube las evidencias de tus actividades recientes."),
-                alertaService.getStartupReminders(LocalDate.of(2026, 10, 1)));
+        List<RecordatorioItem> items = alertaService.getStartupReminderItems(LocalDate.of(2026, 10, 1));
+        assertEquals(1, items.size());
+        assertEquals("Mitad de periodo", items.get(0).etiqueta());
+        assertTrue(items.get(0).detalle().contains("A mitad del periodo 2026-2"));
     }
 
     @Test
     void testRecordatorioDeCierreDePeriodo() throws Exception {
-        assertEquals(List.of("Entrega las evidencias de las actividades que finalizan en este periodo."),
-                alertaService.getStartupReminders(LocalDate.of(2026, 11, 25)));
+        List<RecordatorioItem> items = alertaService.getStartupReminderItems(LocalDate.of(2026, 11, 25));
+        assertEquals(1, items.size());
+        assertEquals("Cierre de periodo", items.get(0).etiqueta());
+        assertTrue(items.get(0).detalle().contains("31/12/2026"));
     }
 
     @Test
@@ -409,9 +478,28 @@ class BackendServicesTest {
         AlertaDAO alertaDAO = new AlertaDAO();
         alertaDAO.replaceAll(List.of("Alerta guardada"));
 
-        assertEquals(List.of("Hay 2 evidencia(s) pendiente(s) con fecha límite hoy o mañana."),
-                alertaService.getStartupReminders(LocalDate.of(2026, 4, 15)));
+        List<RecordatorioItem> items = alertaService.getStartupReminderItems(LocalDate.of(2026, 4, 15));
+        assertEquals(1, items.size());
+        assertEquals("Vence pronto", items.get(0).etiqueta());
+        assertTrue(items.get(0).urgente());
+        assertEquals(2, items.get(0).evidencias().size());
         assertEquals("Alerta guardada", alertaDAO.findAll().getFirst().getContenidoAlerta());
+    }
+
+    @Test
+    void testRecordatoriosEstructuradosIncluyenEvidenciasClickeables() throws Exception {
+        agregarEvidencia("2026-2", true, 1, "2026-11-26");
+        agregarEvidencia("2026-2", true, ESTATUS_ENTREGADO, "2026-11-26");
+
+        List<RecordatorioItem> items = alertaService.getStartupReminderItems(LocalDate.of(2026, 11, 26));
+
+        assertEquals(2, items.size());
+        assertEquals("Vence pronto", items.get(0).etiqueta());
+        assertTrue(items.get(0).urgente());
+        assertEquals(1, items.get(0).evidencias().size());
+        assertEquals("Cierre de periodo", items.get(1).etiqueta());
+        assertEquals(1, items.get(1).evidencias().size());
+        assertTrue(items.get(1).detalle().contains("31/12/2026"));
     }
 
     @Test
@@ -420,8 +508,8 @@ class BackendServicesTest {
         agregarEvidencia("2026-2", true, 1, null);
         agregarEvidencia("2026-2", true, 1, " ");
 
-        assertTrue(alertaService.getStartupReminders(LocalDate.of(2026, 8, 1)).isEmpty());
-        assertTrue(alertaService.getStartupReminders(LocalDate.of(2026, 7, 15)).isEmpty());
+        assertTrue(alertaService.getStartupReminderItems(LocalDate.of(2026, 8, 1)).isEmpty());
+        assertTrue(alertaService.getStartupReminderItems(LocalDate.of(2026, 7, 15)).isEmpty());
     }
 
     private void agregarEvidencia(String periodo, boolean activo, int estatus, String fechaFinalizacion)

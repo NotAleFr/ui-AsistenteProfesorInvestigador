@@ -26,8 +26,10 @@ public class EvidenciaDAO {
           + "t.NombreTipoEvidencia, "
           + "o.NombreOpcion, o.PuntajeOpcion, "
           + "est.NombreEstatus, "
-          + "acr.NombreAcreditacion "
+          + "acr.NombreAcreditacion, "
+          + "p.Activo AS PlanActivo "
           + "FROM Evidencia e "
+          + "INNER JOIN PlanAcademico p ON e.IdPlanAcademico = p.IdPlanAcademico "
           + "INNER JOIN TipoEvidencia t ON e.IdTipoEvidencia = t.IdTipoEvidencia "
           + "LEFT JOIN Opcion o ON e.IdOpcion = o.IdOpcion "
           + "INNER JOIN Categoria c ON t.IdCategoria = c.IdCategoria "
@@ -59,7 +61,6 @@ public class EvidenciaDAO {
 
     public List<Evidencia> findActive() throws SQLException {
         String sql = BASE_SELECT
-                + "INNER JOIN PlanAcademico p ON e.IdPlanAcademico = p.IdPlanAcademico "
                 + "WHERE p.Activo = 1 ORDER BY e.Anio DESC, e.Periodo DESC, e.IdEvidencia DESC";
         List<Evidencia> list = new ArrayList<>();
         try (Connection conn = DatabaseConnection.getConnection();
@@ -297,6 +298,7 @@ public class EvidenciaDAO {
         ev.setPuntajeOpcion(rs.getDouble("PuntajeOpcion"));
         ev.setNombreEstatus(rs.getString("NombreEstatus"));
         ev.setNombreAcreditacion(rs.getString("NombreAcreditacion"));
+        ev.setPlanActivo(rs.getInt("PlanActivo") == 1);
         return ev;
     }
 }

@@ -56,6 +56,15 @@ public class PlanAcademicoView extends JPanel {
         loadPlans();
     }
 
+    public void selectPlanById(int idPlanAcademico) {
+        for (int i = 0; i < planCombo.getItemCount(); i++) {
+            if (planCombo.getItemAt(i).getIdPlanAcademico() == idPlanAcademico) {
+                planCombo.setSelectedIndex(i);
+                return;
+            }
+        }
+    }
+
     private JPanel createToolbar() {
         JPanel toolbar = new JPanel(new BorderLayout());
         toolbar.setOpaque(false);

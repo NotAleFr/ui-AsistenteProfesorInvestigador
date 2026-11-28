@@ -131,9 +131,21 @@ public class RegistroDialog extends JDialog {
     }
 
     public void setDefaultPeriod(String period) {
-        if (period != null && !period.isEmpty()) {
-            periodCombo.setSelectedItem(period);
+        selectOrAddPeriod(period);
+    }
+
+    private void selectOrAddPeriod(String period) {
+        if (period == null || period.isBlank()) {
+            return;
         }
+        for (int i = 0; i < periodCombo.getItemCount(); i++) {
+            if (period.equals(periodCombo.getItemAt(i))) {
+                periodCombo.setSelectedIndex(i);
+                return;
+            }
+        }
+        periodCombo.insertItemAt(period, 0);
+        periodCombo.setSelectedIndex(0);
     }
 
     public void fill(Evidencia ev) {
@@ -141,7 +153,7 @@ public class RegistroDialog extends JDialog {
         editingIdEvidencia = ev.getIdEvidencia();
         editingIdPlanAcademico = ev.getIdPlanAcademico();
         titleField.setText(ev.getTitulo());
-        periodCombo.setSelectedItem(ev.getPeriodo());
+        selectOrAddPeriod(ev.getPeriodo());
         descriptionArea.setText(ev.getDescripcion() != null ? ev.getDescripcion() : "");
 
         for (int i = 0; i < categoryCombo.getItemCount(); i++) {

@@ -1,11 +1,11 @@
 package mx.unison.assistant.ui.frame;
 
 import java.awt.*;
-import java.awt.event.ComponentAdapter;
-import java.awt.event.ComponentEvent;
 import javax.swing.*;
 
+import mx.unison.assistant.model.AlertaItem;
 import mx.unison.assistant.service.AppServices;
+import mx.unison.assistant.ui.common.Ui;
 import mx.unison.assistant.ui.views.*;
 
 public class MainWindow {
@@ -14,8 +14,15 @@ public class MainWindow {
     Sidebar sidebar;
     CardLayout cards = new CardLayout();
     JPanel content = new JPanel(cards);
+    PlanAcademicoView planView;
+    SeguimientoView seguimientoView;
     AlertasPanel alertasPanel;
-    JLayeredPane centerLayers = new JLayeredPane();
+    JLayeredPane centerLayers = new JLayeredPane() {
+        @Override
+        public void doLayout() {
+            layoutCenterLayers();
+        }
+    };
     final AppServices services;
 
     public MainWindow(AppServices services) {
@@ -24,8 +31,8 @@ public class MainWindow {
         frame = new JFrame("Asistente Profesor-Investigador");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-        PlanAcademicoView planView = new PlanAcademicoView(services);
-        SeguimientoView seguimientoView = new SeguimientoView(services);
+        planView = new PlanAcademicoView(services);
+        seguimientoView = new SeguimientoView(services);
         ReportesView reportesView = new ReportesView();
         AjustesView ajustesView = new AjustesView(services);
 
@@ -35,7 +42,12 @@ public class MainWindow {
         content.add(ajustesView, Section.SETTINGS.name());
 
         sidebar = new Sidebar(section -> showSection(section), () -> toggleAlerts());
-        alertasPanel = new AlertasPanel(services, () -> toggleAlerts());
+        alertasPanel = new AlertasPanel(
+            services,
+            () -> toggleAlerts(),
+            alertItem -> openAlert(alertItem),
+            count -> sidebar.setAlertCount(count)
+        );
         alertasPanel.setVisible(false);
 
         planView.setOnDataChanged(() -> {
@@ -54,12 +66,6 @@ public class MainWindow {
         // Usamos JLayeredPane para que la bandeja de alertas flote encima de la pantalla actual
         centerLayers.add(content, JLayeredPane.DEFAULT_LAYER);
         centerLayers.add(alertasPanel, JLayeredPane.PALETTE_LAYER);
-        centerLayers.addComponentListener(new ComponentAdapter() {
-            @Override
-            public void componentResized(ComponentEvent e) {
-                layoutCenterLayers();
-            }
-        });
 
         frame.add(sidebar, BorderLayout.WEST);
         frame.add(centerLayers, BorderLayout.CENTER);
@@ -74,13 +80,22 @@ public class MainWindow {
         int height = centerLayers.getHeight();
         int alertsWidth = UIManager.getInt("Alertas.width");
         content.setBounds(0, 0, width, height);
+        content.validate();
         alertasPanel.setBounds(0, 0, alertsWidth, height);
+        alertasPanel.validate();
     }
 
     public void show() {
         frame.setVisible(true);
         layoutCenterLayers();
-        SwingUtilities.invokeLater(() -> alertasPanel.showStartupReminders(frame));
+        SwingUtilities.invokeLater(() -> alertasPanel.showStartupReminders(
+            frame,
+            evidencia -> {
+                showSection(Section.TRACKING);
+                seguimientoView.openEvidenceById(evidencia.getIdEvidencia());
+            },
+            () -> showSection(Section.TRACKING)
+        ));
     }
 
     public void showSection(Section section) {
@@ -100,6 +115,20 @@ public class MainWindow {
         }
         alertasPanel.setVisible(nextVisible);
         sidebar.setAlertsSelected(nextVisible);
+    }
+
+    private void openAlert(AlertaItem alertItem) {
+        alertasPanel.setVisible(false);
+        sidebar.setAlertsSelected(false);
+
+        if (alertItem.planActivo()) {
+            showSection(Section.TRACKING);
+            seguimientoView.openEvidenceById(alertItem.idEvidencia());
+        } else {
+            showSection(Section.ACADEMIC_PLAN);
+            planView.selectPlanById(alertItem.idPlanAcademico());
+            Ui.info(frame, "Plan borrador", "Esta evidencia pertenece a un plan borrador. Da de alta el plan para darle seguimiento.");
+        }
     }
 
     public JFrame getFrame() {

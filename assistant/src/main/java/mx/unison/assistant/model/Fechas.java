@@ -1,4 +1,4 @@
-package mx.unison.assistant.ui.common;
+package mx.unison.assistant.model;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -17,7 +17,11 @@ public class Fechas {
         if (iso == null || iso.isBlank()) {
             return "";
         }
-        return LocalDate.parse(iso).format(SCREEN);
+        try {
+            return LocalDate.parse(iso.trim()).format(SCREEN);
+        } catch (DateTimeParseException e) {
+            return iso.trim();
+        }
     }
 
     public static String toScreen(LocalDate date) {

@@ -3,12 +3,17 @@ package mx.unison.assistant.ui.dialogs;
 import java.awt.*;
 import java.time.Year;
 import javax.swing.*;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 
 import mx.unison.assistant.model.Periodo;
 import mx.unison.assistant.ui.common.DialogBar;
 import mx.unison.assistant.ui.common.Ui;
 
 public class PlanDialog extends JDialog {
+
+    private static final int MIN_YEAR = 1900;
+    private static final int MAX_YEAR = 2200;
 
     JTextField nameField = new JTextField("Plan #1");
     JTextField yearField = new JTextField(String.valueOf(Year.now().getValue()));
@@ -25,6 +30,22 @@ public class PlanDialog extends JDialog {
 
         updatePeriods();
         yearField.addActionListener(e -> updatePeriods());
+        yearField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                updatePeriods();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                updatePeriods();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                updatePeriods();
+            }
+        });
 
         add(createForm(), BorderLayout.CENTER);
         add(DialogBar.footer(
@@ -54,27 +75,49 @@ public class PlanDialog extends JDialog {
             Ui.info(this, "Aviso", "Escribe un nombre para el plan.");
             return;
         }
-        try {
-            Integer.parseInt(yearField.getText().trim());
-        } catch (NumberFormatException e) {
-            Ui.info(this, "Aviso", "El año debe ser un número válido.");
+        Integer parsedYear = parseValidYear();
+        if (parsedYear == null) {
+            Ui.info(this, "Aviso", "El año debe tener 4 dígitos entre " + MIN_YEAR + " y " + MAX_YEAR + ".");
             return;
         }
+        updatePeriodsForYear(parsedYear);
         accepted = true;
         dispose();
     }
 
     private void updatePeriods() {
+        Integer year = parseValidYear();
+        if (year != null) {
+            updatePeriodsForYear(year);
+        }
+    }
+
+    private Integer parseValidYear() {
         String yearText = yearField.getText().trim();
+        if (yearText.length() != 4) {
+            return null;
+        }
         int year;
         try {
-            year = yearText.isEmpty() ? Year.now().getValue() : Integer.parseInt(yearText);
+            year = Integer.parseInt(yearText);
         } catch (NumberFormatException e) {
-            year = Year.now().getValue();
+            return null;
         }
+        if (year < MIN_YEAR || year > MAX_YEAR) {
+            return null;
+        }
+        return year;
+    }
+
+    private void updatePeriodsForYear(int year) {
+        String previousSelection = (String) periodCombo.getSelectedItem();
+        boolean preferSecondSemester = previousSelection != null && previousSelection.endsWith("-2");
         periodCombo.removeAllItems();
-        for (String p : Periodo.periodsOf(year)) {
-            periodCombo.addItem(p);
+        for (String period : Periodo.periodsOf(year)) {
+            periodCombo.addItem(period);
+        }
+        if (preferSecondSemester && periodCombo.getItemCount() > 1) {
+            periodCombo.setSelectedIndex(1);
         }
     }
 

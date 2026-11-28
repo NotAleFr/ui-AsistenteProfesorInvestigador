@@ -7,7 +7,10 @@ import java.awt.event.MouseMotionAdapter;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
@@ -16,10 +19,10 @@ import javax.swing.table.DefaultTableModel;
 
 import mx.unison.assistant.model.Documento;
 import mx.unison.assistant.model.Evidencia;
+import mx.unison.assistant.model.Fechas;
 import mx.unison.assistant.model.Periodo;
 import mx.unison.assistant.service.AppServices;
 import mx.unison.assistant.service.EvidenciaService.ResumenIndicadores;
-import mx.unison.assistant.ui.common.Fechas;
 import mx.unison.assistant.ui.common.PageHeader;
 import mx.unison.assistant.ui.common.StatsBar;
 import mx.unison.assistant.ui.common.StatusBadge;
@@ -28,12 +31,18 @@ import mx.unison.assistant.ui.dialogs.SeguimientoDialog;
 
 public class SeguimientoView extends JPanel {
 
+    private static final String TABLE_CARD = "TABLE";
+    private static final String EMPTY_CARD = "EMPTY";
+
     final AppServices services;
 
     JTextField searchField = new JTextField();
     JComboBox<String> yearCombo = new JComboBox<>();
     StatsBar statsBar = new StatsBar();
     JPanel tabsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 16, 4));
+    CardLayout tableCards = new CardLayout();
+    JPanel tableArea = new JPanel(tableCards);
+    JLabel emptyStateLabel = new JLabel("", SwingConstants.CENTER);
 
     DefaultTableModel tableModel;
     JTable table;
@@ -41,11 +50,11 @@ public class SeguimientoView extends JPanel {
     List<Evidencia> allRows = new ArrayList<>();
     List<Evidencia> visibleRows = new ArrayList<>();
     String selectedSemester = "Todos";
+    boolean updatingYears = false;
     Runnable onDataChanged;
 
     public SeguimientoView(AppServices services) {
         this.services = services;
-        loadYears();
 
         setLayout(new BorderLayout());
         setBackground(Color.WHITE);
@@ -68,8 +77,12 @@ public class SeguimientoView extends JPanel {
         north.add(header, BorderLayout.NORTH);
         north.add(controls, BorderLayout.CENTER);
 
+        tableArea.setOpaque(false);
+        tableArea.add(createTableScroll(), TABLE_CARD);
+        tableArea.add(createEmptyStatePanel(), EMPTY_CARD);
+
         mainArea.add(north, BorderLayout.NORTH);
-        mainArea.add(createTableScroll(), BorderLayout.CENTER);
+        mainArea.add(tableArea, BorderLayout.CENTER);
 
         filtrosPanel = new FiltrosPanel(services, () -> applyFilter(), () -> applyFilter());
         filtrosPanel.setVisible(false);
@@ -78,14 +91,36 @@ public class SeguimientoView extends JPanel {
         add(filtrosPanel, BorderLayout.EAST);
 
         loadRows();
+        loadYears();
         rebuildSemesterTabs();
         applyFilter();
     }
 
     private void loadYears() {
-        yearCombo.removeAllItems();
-        for (Integer year : Periodo.recentYears()) {
-            yearCombo.addItem(String.valueOf(year));
+        String previousYear = (String) yearCombo.getSelectedItem();
+        String currentYear = String.valueOf(Periodo.yearOf(Periodo.current()));
+        Set<Integer> years = new TreeSet<>(Collections.reverseOrder());
+        years.addAll(Periodo.recentYears());
+        for (Evidencia item : allRows) {
+            if (item.getAnio() > 0) {
+                years.add(item.getAnio());
+            }
+        }
+
+        boolean hasPreviousYear = false;
+        updatingYears = true;
+        try {
+            yearCombo.removeAllItems();
+            for (Integer year : years) {
+                String yearText = String.valueOf(year);
+                yearCombo.addItem(yearText);
+                if (yearText.equals(previousYear)) {
+                    hasPreviousYear = true;
+                }
+            }
+            yearCombo.setSelectedItem(hasPreviousYear ? previousYear : currentYear);
+        } finally {
+            updatingYears = false;
         }
     }
 
@@ -95,6 +130,8 @@ public class SeguimientoView extends JPanel {
 
     public void reload() {
         loadRows();
+        loadYears();
+        rebuildSemesterTabs();
         applyFilter();
     }
 
@@ -129,8 +166,10 @@ public class SeguimientoView extends JPanel {
         yearLabel.setForeground(UIManager.getColor("Text.secondaryForeground"));
         yearCombo.setPreferredSize(new Dimension(84, 34));
         yearCombo.addActionListener(e -> {
-            rebuildSemesterTabs();
-            applyFilter();
+            if (!updatingYears) {
+                rebuildSemesterTabs();
+                applyFilter();
+            }
         });
 
         toolbar.add(searchField);
@@ -160,13 +199,21 @@ public class SeguimientoView extends JPanel {
         tabsPanel.removeAll();
         String year = String.valueOf(yearCombo.getSelectedItem());
         String[] options = { "Todos", "Semestre " + year + "-1", "Semestre " + year + "-2" };
-        selectedSemester = "Todos";
+
+        String preservedSelection = "Todos";
+        for (String option : options) {
+            if (option.equals(selectedSemester)) {
+                preservedSelection = option;
+                break;
+            }
+        }
+        selectedSemester = preservedSelection;
 
         ButtonGroup group = new ButtonGroup();
         for (String option : options) {
             JToggleButton tab = new JToggleButton(option);
             tab.putClientProperty("FlatLaf.styleClass", "tab");
-            if (option.equals("Todos")) {
+            if (option.equals(selectedSemester)) {
                 tab.setSelected(true);
             }
             tab.addActionListener(e -> {
@@ -249,6 +296,17 @@ public class SeguimientoView extends JPanel {
         return scroll;
     }
 
+    private JPanel createEmptyStatePanel() {
+        JPanel emptyPanel = new JPanel(new GridBagLayout());
+        emptyPanel.setBackground(Color.WHITE);
+        emptyPanel.setBorder(BorderFactory.createEmptyBorder(24, 24, 24, 24));
+
+        emptyStateLabel.setForeground(UIManager.getColor("Text.secondaryForeground"));
+        emptyStateLabel.putClientProperty("FlatLaf.style", "font: size: 14");
+        emptyPanel.add(emptyStateLabel);
+        return emptyPanel;
+    }
+
     private JPanel badgeCell(StatusBadge badge, JTable tbl, boolean isSelected) {
         JPanel cell = new JPanel(new GridBagLayout());
         cell.setBackground(isSelected ? tbl.getSelectionBackground() : Color.WHITE);
@@ -289,6 +347,15 @@ public class SeguimientoView extends JPanel {
 
         ResumenIndicadores resumen = services.evidencias.countByStatus(rows);
         statsBar.setCounts(resumen.total(), resumen.entregadas(), resumen.pendientes(), resumen.enProceso());
+
+        if (rows.isEmpty()) {
+            emptyStateLabel.setText(allRows.isEmpty()
+                ? "No hay evidencias en seguimiento."
+                : "No se encontraron evidencias con los filtros actuales.");
+            tableCards.show(tableArea, EMPTY_CARD);
+        } else {
+            tableCards.show(tableArea, TABLE_CARD);
+        }
     }
 
     public void onSearch() {
@@ -382,8 +449,25 @@ public class SeguimientoView extends JPanel {
         if (row < 0 || row >= visibleRows.size()) {
             return;
         }
+        openTrackingDialog(visibleRows.get(row));
+    }
 
-        Evidencia item = visibleRows.get(row);
+    public void openEvidenceById(int idEvidencia) {
+        try {
+            Evidencia targetEvidence = services.evidencias.findById(idEvidencia).orElse(null);
+            if (targetEvidence == null) {
+                JOptionPane.showMessageDialog(this, "La evidencia seleccionada ya no existe.", "Aviso", JOptionPane.WARNING_MESSAGE);
+                reload();
+                return;
+            }
+            openTrackingDialog(targetEvidence);
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "No se pudo cargar la evidencia seleccionada.", "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void openTrackingDialog(Evidencia item) {
         SeguimientoDialog dialog = new SeguimientoDialog(SwingUtilities.getWindowAncestor(this), services);
         dialog.fill(item);
         dialog.setVisible(true);

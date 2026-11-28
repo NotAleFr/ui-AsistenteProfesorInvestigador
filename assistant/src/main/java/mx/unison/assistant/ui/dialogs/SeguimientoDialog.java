@@ -1,9 +1,15 @@
 package mx.unison.assistant.ui.dialogs;
 
 import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import javax.swing.*;
@@ -12,7 +18,6 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 import mx.unison.assistant.model.*;
 import mx.unison.assistant.service.AppServices;
 import mx.unison.assistant.ui.common.DialogBar;
-import mx.unison.assistant.ui.common.Fechas;
 import mx.unison.assistant.ui.common.InfoBox;
 import mx.unison.assistant.ui.common.Ui;
 
@@ -34,6 +39,7 @@ public class SeguimientoDialog extends JDialog {
     JTextField dueDateField = new JTextField();
 
     JPanel documentsPanel = new JPanel();
+    JTextArea notesArea = new JTextArea(4, 24);
     InfoBox infoBox = new InfoBox("Acreditación (PEDPD)");
 
     Evidencia sourceEvidence;
@@ -66,8 +72,8 @@ public class SeguimientoDialog extends JDialog {
         }
 
         setLayout(new BorderLayout());
-        setSize(980, 600);
-        setMinimumSize(new Dimension(880, 540));
+        setSize(980, 640);
+        setMinimumSize(new Dimension(880, 560));
         setLocationRelativeTo(owner);
 
         // La categoría recarga los tipos. El tipo recarga las opciones y el cuadro PEDPD (RF-04, RF-13)
@@ -117,10 +123,15 @@ public class SeguimientoDialog extends JDialog {
         topFields.add(row2);
         topFields.add(row3);
 
-        // Dos columnas abajo, los documentos y la acreditación PEDPD
+        // Dos columnas abajo: documentos + notas a la izquierda, acreditación PEDPD a la derecha
+        JPanel leftColumn = new JPanel(new GridLayout(2, 1, 0, 12));
+        leftColumn.setOpaque(false);
+        leftColumn.add(createDocumentsBox());
+        leftColumn.add(Ui.noteBox("Descripción / Notas adicionales", notesArea));
+
         JPanel columns = new JPanel(new GridLayout(1, 2, 16, 0));
         columns.setOpaque(false);
-        columns.add(createDocumentsBox());
+        columns.add(leftColumn);
         columns.add(infoBox);
 
         body.add(topFields, BorderLayout.NORTH);
@@ -161,14 +172,24 @@ public class SeguimientoDialog extends JDialog {
         } else {
             for (int i = 0; i < existingDocuments.size(); i++) {
                 int idx = i;
-                String name = existingDocuments.get(i).getNombreOriginal();
-                documentsPanel.add(createDocumentPill(name, () -> onRemoveExistingDocument(idx)));
+                Documento existingDocument = existingDocuments.get(i);
+                String name = existingDocument.getNombreOriginal();
+                documentsPanel.add(createDocumentPill(
+                    name,
+                    () -> openFile(services.documentos.resolveFile(existingDocument)),
+                    () -> onRemoveExistingDocument(idx)
+                ));
                 documentsPanel.add(Box.createVerticalStrut(8));
             }
             for (int i = 0; i < newFiles.size(); i++) {
                 int idx = i;
-                String name = newFiles.get(i).getName();
-                documentsPanel.add(createDocumentPill(name, () -> onRemoveNewFile(idx)));
+                File pendingFile = newFiles.get(i);
+                String name = pendingFile.getName();
+                documentsPanel.add(createDocumentPill(
+                    name,
+                    () -> openFile(pendingFile.toPath()),
+                    () -> onRemoveNewFile(idx)
+                ));
                 documentsPanel.add(Box.createVerticalStrut(8));
             }
         }
@@ -176,17 +197,57 @@ public class SeguimientoDialog extends JDialog {
         documentsPanel.repaint();
     }
 
-    private JPanel createDocumentPill(String docName, Runnable onRemove) {
+    private JPanel createDocumentPill(String docName, Runnable onOpen, Runnable onRemove) {
         JPanel pill = new JPanel(new BorderLayout(8, 0));
         pill.setBackground(UIManager.getColor("Note.background"));
         pill.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 6));
         pill.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
 
+        JLabel nameLabel = new JLabel(docName);
+        nameLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        nameLabel.setToolTipText("Abrir archivo");
+        nameLabel.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                onOpen.run();
+            }
+
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                nameLabel.setText("<html><u>" + escapeHtml(docName) + "</u></html>");
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+                nameLabel.setText(docName);
+            }
+        });
+
         JButton removeButton = Ui.button("X", "pillClose", onRemove);
 
-        pill.add(new JLabel(docName), BorderLayout.CENTER);
+        pill.add(nameLabel, BorderLayout.CENTER);
         pill.add(removeButton, BorderLayout.EAST);
         return pill;
+    }
+
+    private void openFile(Path filePath) {
+        if (filePath == null || !Files.exists(filePath)) {
+            JOptionPane.showMessageDialog(this, "El archivo ya no existe en el equipo.", "Archivo no encontrado", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        if (!Desktop.isDesktopSupported() || !Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
+            JOptionPane.showMessageDialog(this, "Este sistema no permite abrir archivos directamente desde la aplicación.", "Aviso", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        try {
+            Desktop.getDesktop().open(filePath.toFile());
+        } catch (IOException | UnsupportedOperationException e) {
+            JOptionPane.showMessageDialog(this, "No se pudo abrir el archivo seleccionado.", "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private String escapeHtml(String text) {
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     private void onSave() {
@@ -201,6 +262,17 @@ public class SeguimientoDialog extends JDialog {
         // La opción solo es obligatoria si el tipo tiene opciones (Apéndice B)
         if (optionCombo.getItemCount() > 0 && optionCombo.getSelectedItem() == null) {
             Ui.info(this, "Aviso", "Selecciona una opción para este tipo de actividad.");
+            return;
+        }
+        try {
+            String startDateIso = Fechas.toIso(startDateField.getText());
+            String dueDateIso = Fechas.toIso(dueDateField.getText());
+            if (startDateIso != null && dueDateIso != null && dueDateIso.compareTo(startDateIso) < 0) {
+                Ui.info(this, "Aviso", "La fecha de finalización no puede ser anterior a la fecha de inicio.");
+                return;
+            }
+        } catch (IllegalArgumentException e) {
+            Ui.info(this, "Aviso", e.getMessage());
             return;
         }
         saved = true;
@@ -352,21 +424,40 @@ public class SeguimientoDialog extends JDialog {
                 }
             }
 
-            String startScreen = (ev.getFechaInicio() != null && !ev.getFechaInicio().isBlank())
-                ? Fechas.toScreen(ev.getFechaInicio())
-                : Fechas.toScreen(LocalDate.now());
+            String activePeriod = (String) periodCombo.getSelectedItem();
+            LocalDate defaultDueDate = (activePeriod != null && Periodo.isValid(activePeriod))
+                ? Periodo.endOf(activePeriod)
+                : null;
+            LocalDate effectiveDueDate = parseIsoDateOrNull(ev.getFechaFinalizacion());
+            if (effectiveDueDate == null) {
+                effectiveDueDate = defaultDueDate;
+            }
+
+            String startScreen;
+            if (ev.getFechaInicio() != null && !ev.getFechaInicio().isBlank()) {
+                startScreen = Fechas.toScreen(ev.getFechaInicio());
+            } else {
+                // Si la fecha límite efectiva ya pasó, evitamos poner hoy para no romper inicio <= fin
+                LocalDate today = LocalDate.now();
+                LocalDate defaultStartDate = today;
+                if (effectiveDueDate != null && today.isAfter(effectiveDueDate)) {
+                    LocalDate periodStart = (activePeriod != null && Periodo.isValid(activePeriod))
+                        ? Periodo.startOf(activePeriod)
+                        : effectiveDueDate;
+                    defaultStartDate = effectiveDueDate.isBefore(periodStart) ? effectiveDueDate : periodStart;
+                }
+                startScreen = Fechas.toScreen(defaultStartDate);
+            }
             startDateField.setText(startScreen);
 
             String dueScreen;
             if (ev.getFechaFinalizacion() != null && !ev.getFechaFinalizacion().isBlank()) {
                 dueScreen = Fechas.toScreen(ev.getFechaFinalizacion());
             } else {
-                String activePeriod = (String) periodCombo.getSelectedItem();
-                dueScreen = (activePeriod != null && Periodo.isValid(activePeriod))
-                    ? Fechas.toScreen(Periodo.endOf(activePeriod))
-                    : "";
+                dueScreen = defaultDueDate != null ? Fechas.toScreen(defaultDueDate) : "";
             }
             dueDateField.setText(dueScreen);
+            notesArea.setText(ev.getDescripcion() != null ? ev.getDescripcion() : "");
 
             existingDocuments.clear();
             newFiles.clear();
@@ -380,6 +471,17 @@ public class SeguimientoDialog extends JDialog {
         }
     }
 
+    private LocalDate parseIsoDateOrNull(String isoDate) {
+        if (isoDate == null || isoDate.isBlank()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(isoDate.trim());
+        } catch (DateTimeParseException e) {
+            return null;
+        }
+    }
+
     public boolean isSaved() {
         return saved;
     }
@@ -388,12 +490,13 @@ public class SeguimientoDialog extends JDialog {
         Evidencia ev = new Evidencia();
         if (sourceEvidence != null) {
             ev.setIdEvidencia(sourceEvidence.getIdEvidencia());
-            ev.setDescripcion(sourceEvidence.getDescripcion());
             ev.setIdPlanAcademico(sourceEvidence.getIdPlanAcademico());
             ev.setDocumentos(sourceEvidence.getDocumentos());
         }
 
         ev.setTitulo(titleField.getText().trim());
+        String notes = notesArea.getText();
+        ev.setDescripcion(notes.isBlank() ? null : notes);
         ev.setPeriodo((String) periodCombo.getSelectedItem());
 
         Estatus selectedStatus = (Estatus) statusCombo.getSelectedItem();

@@ -1,4 +1,4 @@
-package mx.unison.assistant.ui.common;
+package mx.unison.assistant.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -15,6 +15,7 @@ class FechasTest {
         assertEquals("31/12/2026", Fechas.toScreen(LocalDate.of(2026, 12, 31)));
         assertEquals("", Fechas.toScreen((String) null));
         assertEquals("", Fechas.toScreen(""));
+        assertEquals("2026-11-31", Fechas.toScreen("2026-11-31"));
     }
 
     @Test
