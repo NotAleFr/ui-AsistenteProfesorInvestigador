@@ -14,6 +14,9 @@ import mx.unison.assistant.model.PlanAcademico;
 // No hay savePlan(): cada registro se guarda al agregarlo, así que un plan nuevo ya es un borrador (RF-07)
 public class PlanService {
 
+    public static final int MIN_YEAR = 1900;
+    public static final int MAX_YEAR = 2200;
+
     private final PlanAcademicoDAO planDAO;
     private final EvidenciaDAO evidenciaDAO;
     private final DocumentoService documentoService;
@@ -34,6 +37,9 @@ public class PlanService {
     public PlanAcademico createPlan(String nombre, int anio, String periodo) throws SQLException {
         if (nombre == null || nombre.isBlank()) {
             throw new IllegalArgumentException("El nombre del plan académico es obligatorio.");
+        }
+        if (anio < MIN_YEAR || anio > MAX_YEAR) {
+            throw new IllegalArgumentException("El año del plan debe estar entre " + MIN_YEAR + " y " + MAX_YEAR + ".");
         }
         if (!Periodo.isValid(periodo)) {
             throw new IllegalArgumentException("El periodo debe tener el formato YYYY-1 o YYYY-2.");
@@ -101,7 +107,15 @@ public class PlanService {
 
     public void activatePlan(int idPlanAcademico) throws SQLException {
         planDAO.activate(idPlanAcademico);
-        alertaService.checkAlerts();
+        refreshAlertsAfterCommit();
+    }
+
+    private void refreshAlertsAfterCommit() {
+        try {
+            alertaService.checkAlerts();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
     }
 
     public void deletePlan(int idPlanAcademico) throws SQLException {

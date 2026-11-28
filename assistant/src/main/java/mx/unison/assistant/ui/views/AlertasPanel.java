@@ -4,6 +4,7 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
@@ -20,6 +21,7 @@ public class AlertasPanel extends JPanel {
     final AppServices services;
 
     JPanel listPanel = new JPanel();
+    List<AlertaItem> visibleAlerts = new ArrayList<>();
     Runnable onClose;
     Consumer<AlertaItem> onSelectAlert;
     IntConsumer onCountChanged;
@@ -75,27 +77,34 @@ public class AlertasPanel extends JPanel {
     }
 
     public void refresh() {
-        listPanel.removeAll();
-        int alertCount = 0;
-
         try {
-            List<AlertaItem> alertItems = services.alertas.refreshAlertItems();
-            alertCount = alertItems.size();
-            if (alertItems.isEmpty()) {
-                listPanel.add(createStaticCard("No hay alertas"));
-            } else {
-                for (AlertaItem alertItem : alertItems) {
-                    listPanel.add(createClickableAlertCard(alertItem));
-                    listPanel.add(Box.createVerticalStrut(10));
-                }
-            }
+            visibleAlerts = new ArrayList<>(services.alertas.refreshAlertItems());
+            renderAlertItems();
         } catch (SQLException e) {
             e.printStackTrace();
+            visibleAlerts = new ArrayList<>();
+            listPanel.removeAll();
             listPanel.add(createStaticCard("No se pudieron cargar las alertas."));
+            if (onCountChanged != null) {
+                onCountChanged.accept(0);
+            }
+            listPanel.revalidate();
+            listPanel.repaint();
         }
+    }
 
+    private void renderAlertItems() {
+        listPanel.removeAll();
+        if (visibleAlerts.isEmpty()) {
+            listPanel.add(createStaticCard("No hay alertas"));
+        } else {
+            for (AlertaItem alertItem : visibleAlerts) {
+                listPanel.add(createClickableAlertCard(alertItem));
+                listPanel.add(Box.createVerticalStrut(10));
+            }
+        }
         if (onCountChanged != null) {
-            onCountChanged.accept(alertCount);
+            onCountChanged.accept(visibleAlerts.size());
         }
         listPanel.revalidate();
         listPanel.repaint();
@@ -141,13 +150,22 @@ public class AlertasPanel extends JPanel {
         );
         actionButton.putClientProperty("FlatLaf.style", "font: semibold, size: 12; focusWidth: 1; margin: 2,2,2,2; background: #00000000; hoverBackground: #0000000D");
         actionButton.setHorizontalAlignment(SwingConstants.LEFT);
-        actionButton.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JButton markReadButton = Ui.linkButton("Marcar leída", () -> markAlertAsRead(alertItem));
+        markReadButton.putClientProperty("FlatLaf.style", "font: size: 12; focusWidth: 1; margin: 2,4,2,4; background: #00000000; hoverBackground: #0000000D");
+        markReadButton.setForeground(UIManager.getColor("Text.secondaryForeground"));
+
+        JPanel actionsRow = new JPanel(new BorderLayout(8, 0));
+        actionsRow.setOpaque(false);
+        actionsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        actionsRow.add(actionButton, BorderLayout.WEST);
+        actionsRow.add(markReadButton, BorderLayout.EAST);
 
         card.add(titleText);
         card.add(Box.createVerticalStrut(4));
         card.add(messageText);
         card.add(Box.createVerticalStrut(6));
-        card.add(actionButton);
+        card.add(actionsRow);
 
         MouseAdapter interactionHandler = new MouseAdapter() {
             @Override
@@ -175,6 +193,12 @@ public class AlertasPanel extends JPanel {
         if (onSelectAlert != null) {
             onSelectAlert.accept(alertItem);
         }
+    }
+
+    private void markAlertAsRead(AlertaItem alertItem) {
+        services.alertas.markAlertAsRead(alertItem.clave());
+        visibleAlerts.removeIf(item -> item.clave().equals(alertItem.clave()));
+        renderAlertItems();
     }
 
     private JTextArea createCardText(String content, String flatLafStyle) {

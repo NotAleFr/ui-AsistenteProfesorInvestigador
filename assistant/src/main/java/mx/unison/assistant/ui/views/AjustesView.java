@@ -128,9 +128,10 @@ public class AjustesView extends JPanel {
                     JOptionPane.ERROR_MESSAGE
                 );
             } catch (IOException e) {
+                e.printStackTrace();
                 JOptionPane.showMessageDialog(
                     this,
-                    e.getMessage(),
+                    "No se pudieron eliminar todos los archivos adjuntos. Cierra los archivos abiertos e intenta de nuevo.",
                     "Error",
                     JOptionPane.ERROR_MESSAGE
                 );

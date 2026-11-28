@@ -20,38 +20,32 @@ public class StatusBadge extends JLabel {
 
     public static StatusBadge forStatus(String status) {
         if ("Entregado".equalsIgnoreCase(status)) {
-            return new StatusBadge(
-                status,
-                UIManager.getColor("Status.delivered.background"),
-                UIManager.getColor("Status.delivered.foreground")
-            );
+            return withThemePalette(status, "Status.delivered");
         }
         if ("Pendiente".equalsIgnoreCase(status)) {
-            return new StatusBadge(
-                status,
-                UIManager.getColor("Status.pending.background"),
-                UIManager.getColor("Status.pending.foreground")
-            );
+            return withThemePalette(status, "Status.pending");
         }
-        return new StatusBadge(
-            status,
-            UIManager.getColor("Status.inProgress.background"),
-            UIManager.getColor("Status.inProgress.foreground")
-        );
+        return withThemePalette(status, "Status.inProgress");
     }
 
     public static StatusBadge forFiles(int count) {
         if (count > 0) {
-            return new StatusBadge(
-                "Sí (" + count + ")",
-                UIManager.getColor("Status.delivered.background"),
-                UIManager.getColor("Status.delivered.foreground")
-            );
+            return withThemePalette("Sí (" + count + ")", "Status.delivered");
         }
+        return withThemePalette("Sin archivos", "Status.inProgress");
+    }
+
+    public static StatusBadge forPlanState(boolean activo) {
+        return activo
+            ? withThemePalette("Activo", "Status.delivered")
+            : withThemePalette("Borrador", "Status.pending");
+    }
+
+    private static StatusBadge withThemePalette(String text, String colorKeyPrefix) {
         return new StatusBadge(
-            "Sin archivos",
-            UIManager.getColor("Status.inProgress.background"),
-            UIManager.getColor("Status.inProgress.foreground")
+            text,
+            UIManager.getColor(colorKeyPrefix + ".background"),
+            UIManager.getColor(colorKeyPrefix + ".foreground")
         );
     }
 

@@ -48,6 +48,7 @@ public class CategorySection extends JPanel {
 
         table = new JTable(model);
         table.setRowSelectionAllowed(true);
+        table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         table.getTableHeader().setReorderingAllowed(false);
         table.setDefaultRenderer(Object.class, Ui.tooltipCellRenderer());
 

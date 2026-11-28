@@ -7,13 +7,11 @@ import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
 import mx.unison.assistant.model.Periodo;
+import mx.unison.assistant.service.PlanService;
 import mx.unison.assistant.ui.common.DialogBar;
 import mx.unison.assistant.ui.common.Ui;
 
 public class PlanDialog extends JDialog {
-
-    private static final int MIN_YEAR = 1900;
-    private static final int MAX_YEAR = 2200;
 
     JTextField nameField = new JTextField("Plan #1");
     JTextField yearField = new JTextField(String.valueOf(Year.now().getValue()));
@@ -77,7 +75,7 @@ public class PlanDialog extends JDialog {
         }
         Integer parsedYear = parseValidYear();
         if (parsedYear == null) {
-            Ui.info(this, "Aviso", "El año debe tener 4 dígitos entre " + MIN_YEAR + " y " + MAX_YEAR + ".");
+            Ui.info(this, "Aviso", "El año debe tener 4 dígitos entre " + PlanService.MIN_YEAR + " y " + PlanService.MAX_YEAR + ".");
             return;
         }
         updatePeriodsForYear(parsedYear);
@@ -103,7 +101,7 @@ public class PlanDialog extends JDialog {
         } catch (NumberFormatException e) {
             return null;
         }
-        if (year < MIN_YEAR || year > MAX_YEAR) {
+        if (year < PlanService.MIN_YEAR || year > PlanService.MAX_YEAR) {
             return null;
         }
         return year;

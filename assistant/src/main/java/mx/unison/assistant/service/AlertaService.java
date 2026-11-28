@@ -5,6 +5,8 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import mx.unison.assistant.data.AlertaDAO;
 import mx.unison.assistant.data.EvidenciaDAO;
 import mx.unison.assistant.model.Alerta;
@@ -24,10 +26,17 @@ public class AlertaService {
 
     private final EvidenciaDAO evidenciaDAO;
     private final AlertaDAO alertaDAO;
+    private final Set<String> readAlertKeys = ConcurrentHashMap.newKeySet();
 
     public AlertaService(EvidenciaDAO evidenciaDAO, AlertaDAO alertaDAO) {
         this.evidenciaDAO = evidenciaDAO;
         this.alertaDAO = alertaDAO;
+    }
+
+    public void markAlertAsRead(String alertKey) {
+        if (alertKey != null && !alertKey.isBlank()) {
+            readAlertKeys.add(alertKey);
+        }
     }
 
     public List<RecordatorioItem> getStartupReminderItems() throws SQLException {
@@ -137,8 +146,8 @@ public class AlertaService {
     }
 
     /**
-     * Evalúa las alertas individuales (RF-19) y sincroniza en el mismo paso los resúmenes
-     * persistidos en la tabla {@code Alertas}, evitando desfases entre bandeja y BD.
+     * Evalúa las alertas individuales (RF-19), sincroniza en el mismo paso los resúmenes
+     * persistidos en la tabla {@code Alertas} y devuelve solo las no leídas de la sesión (RF-20).
      */
     public List<AlertaItem> refreshAlertItems() throws SQLException {
         return refreshAlertItems(Periodo.current());
@@ -147,7 +156,17 @@ public class AlertaService {
     public List<AlertaItem> refreshAlertItems(String currentPeriod) throws SQLException {
         List<AlertaItem> alertItems = getAlertItems(currentPeriod);
         alertaDAO.replaceAll(summarizeAlerts(alertItems, currentPeriod));
-        return alertItems;
+        return filterUnreadAlerts(alertItems);
+    }
+
+    private List<AlertaItem> filterUnreadAlerts(List<AlertaItem> alertItems) {
+        List<AlertaItem> unread = new ArrayList<>();
+        for (AlertaItem item : alertItems) {
+            if (!readAlertKeys.contains(item.clave())) {
+                unread.add(item);
+            }
+        }
+        return unread;
     }
 
     private List<String> summarizeAlerts(List<AlertaItem> alertItems, String currentPeriod) {

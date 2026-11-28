@@ -113,6 +113,8 @@ class BackendServicesTest {
         assertThrows(IllegalArgumentException.class, () -> planService.createPlan("Plan", 2025, "2026-1"));
         assertThrows(IllegalArgumentException.class, () -> planService.createPlan("Plan", 2026, "2026-3"));
         assertThrows(IllegalArgumentException.class, () -> planService.createPlan(" ", 2026, "2026-1"));
+        assertThrows(IllegalArgumentException.class, () -> planService.createPlan("Plan", 1899, "1899-1"));
+        assertThrows(IllegalArgumentException.class, () -> planService.createPlan("Plan", 2201, "2201-1"));
 
         PlanAcademico plan = planService.createPlan("Plan 2026-1", 2026, "2026-1");
         assertFalse(plan.isActivo());
@@ -417,6 +419,52 @@ class BackendServicesTest {
     }
 
     @Test
+    void testSeguimientoValidaFormatoDeFechas() throws Exception {
+        Evidencia registro = registroEnSeguimiento();
+
+        registro.setFechaInicio("2026-11-31");
+        registro.setFechaFinalizacion(null);
+        assertThrows(IllegalArgumentException.class, () -> evidenciaService.updateTracking(registro, null, null));
+
+        registro.setFechaInicio("2026-09-01");
+        registro.setFechaFinalizacion("15/09/2026");
+        assertThrows(IllegalArgumentException.class, () -> evidenciaService.updateTracking(registro, null, null));
+
+        registro.setFechaInicio("2026-09-10");
+        registro.setFechaFinalizacion("2026-09-01");
+        assertThrows(IllegalArgumentException.class, () -> evidenciaService.updateTracking(registro, null, null));
+
+        registro.setFechaInicio(" 2026-09-01 ");
+        registro.setFechaFinalizacion(" 2026-09-10 ");
+        assertDoesNotThrow(() -> evidenciaService.updateTracking(registro, null, null));
+        Evidencia guardada = evidenciaService.findById(registro.getIdEvidencia()).orElseThrow();
+        assertEquals("2026-09-01", guardada.getFechaInicio());
+        assertEquals("2026-09-10", guardada.getFechaFinalizacion());
+    }
+
+    @Test
+    void testMarcarAlertaComoLeidaOcultaEnSesionSinBorrarResumen() throws Exception {
+        PlanAcademico plan = planService.createPlan("Plan alertas leidas", 2026, "2026-2");
+        planService.addRecord(nuevoRegistro(plan));
+
+        List<AlertaItem> todas = alertaService.refreshAlertItems("2026-2");
+        assertEquals(2, todas.size());
+
+        String clavePrimera = todas.get(0).clave();
+        alertaService.markAlertAsRead(clavePrimera);
+
+        List<AlertaItem> noLeidas = alertaService.refreshAlertItems("2026-2");
+        assertEquals(1, noLeidas.size());
+        assertNotEquals(clavePrimera, noLeidas.get(0).clave());
+        assertEquals(2, alertaService.getAlertItems("2026-2").size());
+        assertEquals(2, alertaService.getStoredAlerts().size());
+
+        // Una nueva instancia simula un reinicio de la app: las pendientes vuelven a mostrarse
+        AlertaService nuevaSesion = new AlertaService(new EvidenciaDAO(), new AlertaDAO());
+        assertEquals(2, nuevaSesion.refreshAlertItems("2026-2").size());
+    }
+
+    @Test
     void testAlertasAnterioresSeConservanSiFallaElReemplazo() throws Exception {
         AlertaDAO alertaDAO = new AlertaDAO();
         alertaDAO.replaceAll(List.of("Alerta 1", "Alerta 2"));
@@ -494,6 +542,11 @@ class BackendServicesTest {
         assertFalse(Files.exists(archivoShm));
         assertEquals(DatabaseConnection.HealthStatus.OK, DatabaseConnection.checkHealth().status());
         assertEquals(1, evidenciaService.findForTracking().size());
+        try (var archivosEnTemp = Files.list(tempDir)) {
+            assertTrue(archivosEnTemp.anyMatch(path ->
+                    path.getFileName().toString().startsWith("test_asistente-corrupt-")
+                            && path.getFileName().toString().endsWith(".db")));
+        }
     }
 
     @Test

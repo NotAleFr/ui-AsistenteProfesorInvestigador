@@ -3,6 +3,8 @@ package mx.unison.assistant.service;
 import java.io.File;
 import java.io.IOException;
 import java.sql.SQLException;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -128,14 +130,27 @@ public class EvidenciaService {
     }
 
     private void validateDates(Evidencia ev) {
-        String inicio = ev.getFechaInicio();
-        String fin = ev.getFechaFinalizacion();
-        if (inicio == null || fin == null || inicio.isBlank() || fin.isBlank()) {
-            return;
-        }
-        // Con el formato "2026-09-05", comparar el texto da el mismo orden que comparar las fechas
-        if (fin.compareTo(inicio) < 0) {
+        LocalDate startDate = parseIsoDate(ev.getFechaInicio(), "fecha de inicio");
+        LocalDate endDate = parseIsoDate(ev.getFechaFinalizacion(), "fecha de finalización");
+        if (startDate != null && endDate != null && endDate.isBefore(startDate)) {
             throw new IllegalArgumentException("La fecha de finalización no puede ser anterior a la fecha de inicio.");
+        }
+        ev.setFechaInicio(startDate != null ? startDate.toString() : null);
+        ev.setFechaFinalizacion(endDate != null ? endDate.toString() : null);
+    }
+
+    private LocalDate parseIsoDate(String rawDate, String fieldName) {
+        if (rawDate == null || rawDate.isBlank()) {
+            return null;
+        }
+        String trimmed = rawDate.trim();
+        if (trimmed.length() != 10) {
+            throw new IllegalArgumentException("La " + fieldName + " debe tener el formato AAAA-MM-DD.");
+        }
+        try {
+            return LocalDate.parse(trimmed);
+        } catch (DateTimeParseException e) {
+            throw new IllegalArgumentException("La " + fieldName + " no es válida. Usa el formato AAAA-MM-DD.");
         }
     }
 

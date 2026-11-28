@@ -37,7 +37,14 @@ public class Periodo {
     }
 
     public static int yearOf(String periodo) {
+        requireValid(periodo);
         return Integer.parseInt(periodo.substring(0, 4));
+    }
+
+    private static void requireValid(String periodo) {
+        if (!isValid(periodo)) {
+            throw new IllegalArgumentException("El periodo debe tener el formato AAAA-1 o AAAA-2.");
+        }
     }
 
     public static String current() {
@@ -62,9 +69,7 @@ public class Periodo {
     }
 
     public static String previous(String periodo) {
-        if (!isValid(periodo)) {
-            throw new IllegalArgumentException("El periodo debe tener el formato AAAA-1 o AAAA-2.");
-        }
+        requireValid(periodo);
         return periodo.endsWith("-2") ? periodo.substring(0, 4) + "-1" : (yearOf(periodo) - 1) + "-2";
     }
 

@@ -34,6 +34,19 @@ class PeriodoTest {
     }
 
     @Test
+    void testPeriodoInvalidoLanzaExcepcion() {
+        for (String invalido : List.of("", "2026-3", "26-1", "abcd-1")) {
+            assertThrows(IllegalArgumentException.class, () -> Periodo.yearOf(invalido));
+            assertThrows(IllegalArgumentException.class, () -> Periodo.startOf(invalido));
+            assertThrows(IllegalArgumentException.class, () -> Periodo.endOf(invalido));
+            assertThrows(IllegalArgumentException.class, () -> Periodo.previous(invalido));
+        }
+        assertThrows(IllegalArgumentException.class, () -> Periodo.yearOf(null));
+        assertThrows(IllegalArgumentException.class, () -> Periodo.startOf(null));
+        assertThrows(IllegalArgumentException.class, () -> Periodo.endOf(null));
+    }
+
+    @Test
     void testPeriodoAnterior() {
         assertEquals("2026-1", Periodo.previous("2026-2"));
         assertEquals("2025-2", Periodo.previous("2026-1"));

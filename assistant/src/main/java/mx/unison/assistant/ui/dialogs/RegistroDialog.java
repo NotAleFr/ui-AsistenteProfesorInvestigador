@@ -18,6 +18,7 @@ import mx.unison.assistant.ui.common.Ui;
 public class RegistroDialog extends JDialog {
     final AppServices services;
 
+    JLabel headerTitleLabel = new JLabel("Creación de registro");
     JTextField titleField = new JTextField();
     JComboBox<String> periodCombo = new JComboBox<>();
     JComboBox<Categoria> categoryCombo = new JComboBox<>();
@@ -26,6 +27,7 @@ public class RegistroDialog extends JDialog {
     InfoBox infoBox = new InfoBox("Definición y acreditación (PEDPD)");
 
     boolean saved = false;
+    boolean populating = false;
     int editingIdEvidencia = 0;
     int editingIdPlanAcademico = 0;
 
@@ -53,11 +55,19 @@ public class RegistroDialog extends JDialog {
         titleField.putClientProperty("JTextField.placeholderText", "Ej. Evidencia #10");
 
         // Los tipos dependen de la categoría y el cuadro PEDPD depende del tipo (RF-04)
-        categoryCombo.addActionListener(e -> loadTypes());
-        typeCombo.addActionListener(e -> updateInfoText());
+        categoryCombo.addActionListener(e -> {
+            if (!populating) {
+                loadTypes();
+            }
+        });
+        typeCombo.addActionListener(e -> {
+            if (!populating) {
+                updateInfoText();
+            }
+        });
         loadTypes();
 
-        add(DialogBar.header("Creación de registro", () -> dispose()), BorderLayout.NORTH);
+        add(DialogBar.header(headerTitleLabel, () -> dispose()), BorderLayout.NORTH);
         add(createBody(), BorderLayout.CENTER);
         add(DialogBar.footer(
             FlowLayout.LEFT,
@@ -107,18 +117,26 @@ public class RegistroDialog extends JDialog {
     // Recarga los tipos de actividad de la categoría seleccionada
     private void loadTypes() {
         Categoria category = (Categoria) categoryCombo.getSelectedItem();
-        typeCombo.removeAllItems();
-        if (category != null) {
-            try {
-                for (TipoEvidencia type : services.catalogo.getTypes(category.getIdCategoria())) {
-                    typeCombo.addItem(type);
+        boolean wasPopulating = populating;
+        populating = true;
+        try {
+            typeCombo.removeAllItems();
+            if (category != null) {
+                try {
+                    for (TipoEvidencia type : services.catalogo.getTypes(category.getIdCategoria())) {
+                        typeCombo.addItem(type);
+                    }
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                    JOptionPane.showMessageDialog(this, "No se pudieron cargar los tipos de actividad.", "Error", JOptionPane.ERROR_MESSAGE);
                 }
-            } catch (SQLException e) {
-                e.printStackTrace();
-                JOptionPane.showMessageDialog(this, "No se pudieron cargar los tipos de actividad.", "Error", JOptionPane.ERROR_MESSAGE);
             }
+        } finally {
+            populating = wasPopulating;
         }
-        updateInfoText();
+        if (!populating) {
+            updateInfoText();
+        }
     }
 
     private void updateInfoText() {
@@ -149,29 +167,36 @@ public class RegistroDialog extends JDialog {
     }
 
     public void fill(Evidencia ev) {
-        setTitle("Editar registro");
-        editingIdEvidencia = ev.getIdEvidencia();
-        editingIdPlanAcademico = ev.getIdPlanAcademico();
-        titleField.setText(ev.getTitulo());
-        selectOrAddPeriod(ev.getPeriodo());
-        descriptionArea.setText(ev.getDescripcion() != null ? ev.getDescripcion() : "");
+        populating = true;
+        try {
+            String editTitle = "Editar registro";
+            setTitle(editTitle);
+            headerTitleLabel.setText(editTitle);
+            editingIdEvidencia = ev.getIdEvidencia();
+            editingIdPlanAcademico = ev.getIdPlanAcademico();
+            titleField.setText(ev.getTitulo());
+            selectOrAddPeriod(ev.getPeriodo());
+            descriptionArea.setText(ev.getDescripcion() != null ? ev.getDescripcion() : "");
 
-        for (int i = 0; i < categoryCombo.getItemCount(); i++) {
-            Categoria c = categoryCombo.getItemAt(i);
-            if (c.getIdCategoria() == ev.getIdCategoria()) {
-                categoryCombo.setSelectedIndex(i);
-                break;
+            for (int i = 0; i < categoryCombo.getItemCount(); i++) {
+                Categoria c = categoryCombo.getItemAt(i);
+                if (c.getIdCategoria() == ev.getIdCategoria()) {
+                    categoryCombo.setSelectedIndex(i);
+                    break;
+                }
             }
-        }
-        loadTypes();
-        for (int i = 0; i < typeCombo.getItemCount(); i++) {
-            TipoEvidencia t = typeCombo.getItemAt(i);
-            if (t.getIdTipoEvidencia() == ev.getIdTipoEvidencia()) {
-                typeCombo.setSelectedIndex(i);
-                break;
+            loadTypes();
+            for (int i = 0; i < typeCombo.getItemCount(); i++) {
+                TipoEvidencia t = typeCombo.getItemAt(i);
+                if (t.getIdTipoEvidencia() == ev.getIdTipoEvidencia()) {
+                    typeCombo.setSelectedIndex(i);
+                    break;
+                }
             }
+            updateInfoText();
+        } finally {
+            populating = false;
         }
-        updateInfoText();
     }
 
     public boolean isSaved() {

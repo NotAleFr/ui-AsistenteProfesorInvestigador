@@ -268,10 +268,14 @@ public class DatabaseConnection {
 
     private static void quarantineCorruptFiles(Path dbFile) throws IOException {
         String timestamp = LocalDateTime.now().format(BACKUP_TIMESTAMP);
-        String corruptFileName = "base_datos-corrupt-" + timestamp + ".db";
-        moveIfExists(dbFile.resolveSibling(dbFile.getFileName() + "-wal"),
+        String originalFileName = dbFile.getFileName().toString();
+        int dotIndex = originalFileName.lastIndexOf('.');
+        String baseName = dotIndex > 0 ? originalFileName.substring(0, dotIndex) : originalFileName;
+        String extension = dotIndex > 0 ? originalFileName.substring(dotIndex) : "";
+        String corruptFileName = baseName + "-corrupt-" + timestamp + extension;
+        moveIfExists(dbFile.resolveSibling(originalFileName + "-wal"),
                 dbFile.resolveSibling(corruptFileName + "-wal"));
-        moveIfExists(dbFile.resolveSibling(dbFile.getFileName() + "-shm"),
+        moveIfExists(dbFile.resolveSibling(originalFileName + "-shm"),
                 dbFile.resolveSibling(corruptFileName + "-shm"));
         moveIfExists(dbFile, dbFile.resolveSibling(corruptFileName));
     }

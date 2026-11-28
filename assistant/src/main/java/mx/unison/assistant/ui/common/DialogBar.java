@@ -7,14 +7,17 @@ import javax.swing.*;
 public class DialogBar {
 
     public static JPanel header(String titleText, Runnable onCancel) {
+        return header(new JLabel(titleText), onCancel);
+    }
+
+    public static JPanel header(JLabel titleLabel, Runnable onCancel) {
         JPanel header = new JPanel(new BorderLayout());
         header.setBackground(Color.WHITE);
         header.setBorder(BorderFactory.createEmptyBorder(20, 24, 12, 24));
 
-        JLabel title = new JLabel(titleText);
-        title.putClientProperty("FlatLaf.styleClass", "h1");
+        titleLabel.putClientProperty("FlatLaf.styleClass", "h1");
 
-        header.add(title, BorderLayout.WEST);
+        header.add(titleLabel, BorderLayout.WEST);
         header.add(Ui.secondaryButton("X  Cancelar", onCancel), BorderLayout.EAST);
         return header;
     }

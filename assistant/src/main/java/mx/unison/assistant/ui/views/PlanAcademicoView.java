@@ -14,6 +14,7 @@ import mx.unison.assistant.model.PlanAcademico;
 import mx.unison.assistant.service.AppServices;
 import mx.unison.assistant.ui.common.CategorySection;
 import mx.unison.assistant.ui.common.PageHeader;
+import mx.unison.assistant.ui.common.StatusBadge;
 import mx.unison.assistant.ui.common.Ui;
 import mx.unison.assistant.ui.dialogs.PlanDialog;
 import mx.unison.assistant.ui.dialogs.RegistroDialog;
@@ -24,11 +25,16 @@ public class PlanAcademicoView extends JPanel {
 
     JComboBox<PlanAcademico> planCombo = new JComboBox<>();
     JLabel periodValue = new JLabel("-");
+    JPanel planStatusSlot = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 4));
     JButton addRecordButton;
+    JButton activatePlanButton;
+    JButton saveDraftButton;
+    JButton deletePlanButton;
     Map<Integer, CategorySection> sections = new LinkedHashMap<>();
     Map<Integer, Categoria> categoriesById = new LinkedHashMap<>();
     Map<Integer, List<Evidencia>> recordsByCategory = new LinkedHashMap<>();
     PlanAcademico currentPlan;
+    boolean populatingPlans = false;
     Runnable onDataChanged;
 
     public PlanAcademicoView(AppServices services) {
@@ -74,14 +80,22 @@ public class PlanAcademicoView extends JPanel {
         ));
 
         planCombo.setPreferredSize(new Dimension(190, 34));
-        planCombo.addActionListener(e -> onSelectPlan());
+        planCombo.addActionListener(e -> {
+            if (!populatingPlans) {
+                onSelectPlan();
+            }
+        });
         periodValue.putClientProperty("FlatLaf.style", "font: semibold, size: 14");
+
+        planStatusSlot.setOpaque(false);
 
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
         left.setOpaque(false);
         left.add(Ui.field("Elige un plan", planCombo));
         left.add(Box.createHorizontalStrut(32));
         left.add(Ui.field("Periodo", periodValue));
+        left.add(Box.createHorizontalStrut(32));
+        left.add(Ui.field("Estado", planStatusSlot));
 
         addRecordButton = Ui.primaryButton("Añadir Registro", () -> onAddRecord());
 
@@ -144,32 +158,40 @@ public class PlanAcademicoView extends JPanel {
         footer.setOpaque(false);
         footer.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, UIManager.getColor("Panel.borderColor")));
 
-        footer.add(Ui.primaryButton("Guardar / Dar de alta", () -> onActivatePlan()));
-        footer.add(Ui.successButton("Guardar borrador", () -> onSave()));
-        footer.add(Ui.dangerButton("Eliminar Plan", () -> onDeletePlan()));
+        activatePlanButton = Ui.primaryButton("Guardar / Dar de alta", () -> onActivatePlan());
+        saveDraftButton = Ui.successButton("Guardar borrador", () -> onSave());
+        deletePlanButton = Ui.dangerButton("Eliminar Plan", () -> onDeletePlan());
+
+        footer.add(activatePlanButton);
+        footer.add(saveDraftButton);
+        footer.add(deletePlanButton);
         return footer;
     }
 
     private void loadPlans() {
         PlanAcademico previousSelected = (PlanAcademico) planCombo.getSelectedItem();
-        planCombo.removeAllItems();
-
+        populatingPlans = true;
         try {
-            List<PlanAcademico> plans = services.planes.listPlans();
-            for (PlanAcademico plan : plans) {
-                planCombo.addItem(plan);
-            }
-            if (previousSelected != null) {
-                for (int i = 0; i < planCombo.getItemCount(); i++) {
-                    if (planCombo.getItemAt(i).getIdPlanAcademico() == previousSelected.getIdPlanAcademico()) {
-                        planCombo.setSelectedIndex(i);
-                        break;
+            planCombo.removeAllItems();
+            try {
+                List<PlanAcademico> plans = services.planes.listPlans();
+                for (PlanAcademico plan : plans) {
+                    planCombo.addItem(plan);
+                }
+                if (previousSelected != null) {
+                    for (int i = 0; i < planCombo.getItemCount(); i++) {
+                        if (planCombo.getItemAt(i).getIdPlanAcademico() == previousSelected.getIdPlanAcademico()) {
+                            planCombo.setSelectedIndex(i);
+                            break;
+                        }
                     }
                 }
+            } catch (SQLException e) {
+                e.printStackTrace();
+                showDbError("No se pudieron cargar los planes académicos.");
             }
-        } catch (SQLException e) {
-            e.printStackTrace();
-            showDbError("No se pudieron cargar los planes académicos.");
+        } finally {
+            populatingPlans = false;
         }
 
         onSelectPlan();
@@ -223,8 +245,14 @@ public class PlanAcademicoView extends JPanel {
 
             try {
                 PlanAcademico created = services.planes.createPlan(name, year, period);
-                planCombo.addItem(created);
-                planCombo.setSelectedItem(created);
+                populatingPlans = true;
+                try {
+                    planCombo.addItem(created);
+                    planCombo.setSelectedItem(created);
+                } finally {
+                    populatingPlans = false;
+                }
+                onSelectPlan();
                 if (onDataChanged != null) {
                     onDataChanged.run();
                 }
@@ -242,14 +270,33 @@ public class PlanAcademicoView extends JPanel {
         if (selected instanceof PlanAcademico) {
             currentPlan = (PlanAcademico) selected;
             periodValue.setText(currentPlan.getPeriodoPlan());
-            addRecordButton.setEnabled(true);
+            updatePlanStateUi();
             loadRecords(currentPlan.getIdPlanAcademico());
         } else {
             currentPlan = null;
             periodValue.setText("-");
-            addRecordButton.setEnabled(false);
+            updatePlanStateUi();
             clearAllTables();
         }
+    }
+
+    private void updatePlanStateUi() {
+        boolean hasPlan = currentPlan != null;
+        addRecordButton.setEnabled(hasPlan);
+        activatePlanButton.setEnabled(hasPlan && !currentPlan.isActivo());
+        saveDraftButton.setEnabled(hasPlan);
+        deletePlanButton.setEnabled(hasPlan);
+
+        planStatusSlot.removeAll();
+        if (hasPlan) {
+            planStatusSlot.add(StatusBadge.forPlanState(currentPlan.isActivo()));
+        } else {
+            JLabel emptyStatus = new JLabel("-");
+            emptyStatus.putClientProperty("FlatLaf.style", "font: semibold, size: 14");
+            planStatusSlot.add(emptyStatus);
+        }
+        planStatusSlot.revalidate();
+        planStatusSlot.repaint();
     }
 
     public void onAddRecord() {
@@ -355,9 +402,15 @@ public class PlanAcademicoView extends JPanel {
             Ui.info(this, "Aviso", "No hay ningún plan seleccionado.");
             return;
         }
+        if (currentPlan.isActivo()) {
+            Ui.info(this, "Plan académico", "Este plan ya está activo en Seguimiento.");
+            return;
+        }
         if (Ui.confirm(this, "¿Deseas dar de alta \"" + currentPlan.getNombrePlan() + "\" y pasar sus registros a Seguimiento?")) {
             try {
                 services.planes.activatePlan(currentPlan.getIdPlanAcademico());
+                currentPlan.setActivo(true);
+                updatePlanStateUi();
                 Ui.info(this, "Plan académico", "Plan dado de alta correctamente.");
                 if (onDataChanged != null) {
                     onDataChanged.run();

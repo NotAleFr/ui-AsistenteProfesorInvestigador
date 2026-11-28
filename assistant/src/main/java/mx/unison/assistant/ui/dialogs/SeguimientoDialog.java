@@ -77,8 +77,16 @@ public class SeguimientoDialog extends JDialog {
         setLocationRelativeTo(owner);
 
         // La categoría recarga los tipos. El tipo recarga las opciones y el cuadro PEDPD (RF-04, RF-13)
-        categoryCombo.addActionListener(e -> loadTypes());
-        typeCombo.addActionListener(e -> onTypeChanged());
+        categoryCombo.addActionListener(e -> {
+            if (!populating) {
+                loadTypes();
+            }
+        });
+        typeCombo.addActionListener(e -> {
+            if (!populating) {
+                onTypeChanged();
+            }
+        });
         loadTypes();
 
         add(DialogBar.header("Seguimiento de evidencia", () -> dispose()), BorderLayout.NORTH);
@@ -360,18 +368,26 @@ public class SeguimientoDialog extends JDialog {
     // Recarga los tipos de actividad de la categoría seleccionada
     private void loadTypes() {
         Categoria category = (Categoria) categoryCombo.getSelectedItem();
-        typeCombo.removeAllItems();
-        if (category != null) {
-            try {
-                for (TipoEvidencia type : services.catalogo.getTypes(category.getIdCategoria())) {
-                    typeCombo.addItem(type);
+        boolean wasPopulating = populating;
+        populating = true;
+        try {
+            typeCombo.removeAllItems();
+            if (category != null) {
+                try {
+                    for (TipoEvidencia type : services.catalogo.getTypes(category.getIdCategoria())) {
+                        typeCombo.addItem(type);
+                    }
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                    JOptionPane.showMessageDialog(this, "No se pudieron cargar los tipos de actividad.", "Error", JOptionPane.ERROR_MESSAGE);
                 }
-            } catch (SQLException e) {
-                e.printStackTrace();
-                JOptionPane.showMessageDialog(this, "No se pudieron cargar los tipos de actividad.", "Error", JOptionPane.ERROR_MESSAGE);
             }
+        } finally {
+            populating = wasPopulating;
         }
-        onTypeChanged();
+        if (!populating) {
+            onTypeChanged();
+        }
     }
 
     // Recarga las opciones del tipo y el cuadro PEDPD. Si el tipo no tiene opciones, el combo se desactiva
